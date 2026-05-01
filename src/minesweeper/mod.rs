@@ -1,20 +1,21 @@
 use std::cmp::{max, min};
-use std::ops::{Range};
+use std::ops::Range;
 use rand::random;
+use coordinate::{Coordinate, Ordinate};
+use tile::Tile;
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Ordinate { X, Y, Z, W }
+pub mod coordinate;
+mod tile;
 
 pub struct Minefield {
     size: Coordinate, tiles: Vec<Tile>, mines_remaining: i16, delta: bool
 }
-
 impl Minefield {
     pub fn new(size: Coordinate, mine_count: u16) -> Result<Self, String> {
-        let mut tiles = vec![false; size.x * size.y * size.z * size.w];
+        let mut tiles = vec![false; size.x() * size.y() * size.z() * size.w()];
         if tiles.len() == 0 { return Err("Minefield dimensions cannot be zero.".to_string()); }
         if tiles.len() < mine_count.into() { return Err(
             String::from("Mine count is too large for the given board dimensions."))}
@@ -36,7 +37,7 @@ impl Minefield {
         for index in mine_positions {
             let coord = field.convert_index(index);
             for neighbour in field.get_neighbours(coord, 1) {
-                field.index_mut(neighbour).minecount += 1;
+                field.index_mut(neighbour).count_mine();
             };
         };
 
@@ -46,7 +47,7 @@ impl Minefield {
         let mut count = 0;
         while count < 10000 {
             let index = random::<u32>() as usize % self.tiles.len();
-            if self.tiles[index].minecount > 0 { count += 1; continue; }
+            if self.tiles[index].minecount() > 0 { count += 1; continue; }
             self.reveal(self.convert_index(index))?;
             return Ok(())
         };
@@ -65,7 +66,7 @@ impl Minefield {
             for y in self.iter_ordinate(coord, radius, Ordinate::Y) {
                 for z in self.iter_ordinate(coord, radius, Ordinate::Z) {
                     for w in self.iter_ordinate(coord, radius, Ordinate::W) {
-                        let coord_2 = coordinate(x, y, z, w);
+                        let coord_2 = coordinate::coordinate(x, y, z, w);
                         if coord == coord_2 { continue; }
                         neighbours.push(coord_2);
                     };
@@ -76,15 +77,15 @@ impl Minefield {
     }
 
     fn convert_index(&self, mut index: usize) -> Coordinate {
-        let x = 1 + index % self.size.x; index /= self.size.x;
-        let y = 1 + index % self.size.y; index /= self.size.y;
-        let z = 1 + index % self.size.z; index /= self.size.z;
-        let w = 1 + index % self.size.w;
-        coordinate(x, y, z, w)
+        let x = 1 + index % self.size.x(); index /= self.size.x();
+        let y = 1 + index % self.size.y(); index /= self.size.y();
+        let z = 1 + index % self.size.z(); index /= self.size.z();
+        let w = 1 + index % self.size.w();
+        coordinate::coordinate(x, y, z, w)
     }
     fn convert_coord(&self, coord: Coordinate) -> usize {
-        (coord.x - 1) + (coord.y - 1) * self.size.x +
-        ((coord.z - 1) + (coord.w- 1) * self.size.z) * (self.size.x * self.size.y)
+        (coord.x() - 1) + (coord.y() - 1) * self.size.x() +
+        ((coord.z() - 1) + (coord.w()- 1) * self.size.z()) * (self.size.x() * self.size.y())
     }
     pub fn index(&self, coord: Coordinate) -> &Tile {
         let index = self.convert_coord(coord);
@@ -167,8 +168,8 @@ impl Minefield {
         QR::Revealed(count)
     }
 }
-type QR = QueryResult;
 
+type QR = QueryResult;
 pub enum QueryResult {
     Blank,
     Flagged,
@@ -181,72 +182,3 @@ pub enum QueryResult {
     GoUnrevealed(i16),
 }
 
-pub fn coordinate(x: usize, y: usize, z: usize, w: usize) -> Coordinate {
-    Coordinate::new(x , y, z, w).unwrap()
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct Coordinate {
-    x: usize, y: usize, z: usize, w: usize
-}
-
-impl Coordinate {
-    pub fn new(x: usize, y: usize, z: usize, w: usize) -> Result<Self, String> {
-        if x == 0 || y == 0 || z == 0 || w == 0 {
-            return Err(String::from("Ordinates must be positive!"))
-        }
-
-        Ok(Coordinate { x, y, z, w })
-    }
-    pub fn x(&self) -> usize { self.x }
-    pub fn y(&self) -> usize { self.y }
-    pub fn z(&self) -> usize { self.z }
-    pub fn w(&self) -> usize { self.w }
-    pub fn get_ordinate(&self, ordinate: Ordinate) -> usize {
-        match ordinate {
-            Ordinate::X => self.x,
-            Ordinate::Y => self.y,
-            Ordinate::Z => self.z,
-            Ordinate::W => self.w,
-        }
-    }
-    pub fn get_xy(&self) -> (usize, usize) { (self.x, self.y) }
-    pub fn get_zw(&self) -> (usize, usize) { (self.z, self.w) }
-}
-
-pub struct Tile {
-    has_mine: bool, is_flagged: bool, is_revealed: bool,
-    minecount: u16, flagged_minecount: u16,
-}
-
-impl Tile {
-    pub fn new(has_mine: bool) -> Self {
-        Self { has_mine, is_flagged: false, is_revealed: false,
-            minecount: 0, flagged_minecount: 0 }
-    }
-
-    pub fn has_mine(&self) -> bool { self.has_mine }
-    pub fn minecount(&self) -> u16 { self.minecount }
-    pub fn delta_minecount(&self) -> i16 { self.minecount as i16 - self.flagged_minecount as i16 }
-    pub fn is_flagged(&self) -> bool { self.is_flagged }
-    pub fn is_revealed(&self) -> bool { self.is_revealed }
-
-    pub(super) fn decrease_flagged_minecount(&mut self) -> Result<(), String> {
-        if self.flagged_minecount == 0 {
-            return Err("Cannot decrease flagged minecount below 0.".into());
-        }
-        self.flagged_minecount -= 1;
-        Ok(())
-    }
-    pub(super) fn increase_flagged_minecount(&mut self) -> Result<(), String> {
-        // if self.minecount == self.flagged_minecount {
-        //     return Err("Cannot increase flagged minecount above total minecount.".into());
-        // }
-        self.flagged_minecount += 1;
-        Ok(())
-    }
-    pub(super) fn toggle_flagged(&mut self) {
-        self.is_flagged = !(self.is_flagged || self.is_revealed);
-    }
-    pub(super) fn reveal(&mut self) { self.is_revealed = true; self.is_flagged = false }
-}

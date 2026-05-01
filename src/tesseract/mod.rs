@@ -1,8 +1,9 @@
-use crate::game::{coordinate, Coordinate, Minefield, Ordinate, QueryResult};
+use crate::minesweeper::{coordinate, Minefield, QueryResult};
 use eframe::egui::{vec2, Align, Button, Color32, Context, Image, Layout, Margin, PointerButton, Response, RichText, ScrollArea, Ui, Vec2};
 use eframe::{egui, App, Frame};
 use icons::{icon, Icon::*};
 use crate::app::AppPhase::*;
+use crate::minesweeper::coordinate::{Coordinate, Ordinate};
 
 mod icons;
 mod colors;
@@ -16,9 +17,9 @@ enum AppPhase {
 }
 
 #[derive(Default)]
-pub struct MinesweeperApp {
+pub struct TesseractApp {
     minefield: Option<Minefield>,
-    settings: UiSettings,
+    settings: TileSettings,
 
     current_phase: AppPhase,
     next_phase: Option<AppPhase>,
@@ -26,8 +27,7 @@ pub struct MinesweeperApp {
     hovered_tile: Option<Coordinate>,
     highlighted_tiles: Vec<Coordinate>
 }
-
-impl MinesweeperApp {
+impl TesseractApp {
     pub fn set_minefield(&mut self, minefield: Minefield) {
         self.minefield = minefield.into();
         self.next_phase = GameRunning.into();
@@ -61,7 +61,7 @@ impl MinesweeperApp {
             .show(ui, |ui| {
                 for y in 1..=self.minefield.as_ref().unwrap().length(Ordinate::Y) {
                     for x in 1..=self.minefield.as_ref().unwrap().length(Ordinate::X) {
-                        let coord = coordinate(x, y, z, w);
+                        let coord = coordinate::coordinate(x, y, z, w);
                         self.display_tile(ui, coord);
                     }
                     ui.end_row();
@@ -123,8 +123,7 @@ impl MinesweeperApp {
         if button.hovered() { self.hovered_tile = Some(coord); }
     }
 }
-
-impl App for MinesweeperApp {
+impl App for TesseractApp {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         if let Some(next) = self.next_phase.take() {
             self.current_phase = next;
@@ -180,16 +179,16 @@ fn minecount_text(minecount: i16) -> RichText {
     RichText::new(minecount.to_string()).color(color)
 }
 
-pub struct UiSettings {
+pub struct TileSettings {
     hor_tile_scaling: f32,
     ver_tile_scaling: f32,
 }
-impl Default for UiSettings {
+impl Default for TileSettings {
     fn default() -> Self {
         Self { hor_tile_scaling: 0.50, ver_tile_scaling: 0.50 }
     }
 }
-impl UiSettings {
+impl TileSettings {
     const TILE: u16 = 90;
     pub fn tile_size(&self) -> Vec2 {
         vec2(Self::TILE as f32 * self.hor_tile_scaling,
