@@ -1,5 +1,5 @@
 [package]
-name = "fast_4d_minesweeper"
+name = "tesseract_sweeper"
 version = "0.1.0"
 edition = "2024"
 

@@ -42,6 +42,17 @@ impl Minefield {
 
         Ok(field)
     }
+    pub fn quickstart(&mut self) -> Result<(), String> {
+        let mut count = 0;
+        while count < 10000 {
+            let index = random::<u32>() as usize % self.tiles.len();
+            if self.tiles[index].minecount > 0 { count += 1; continue; }
+            self.reveal(self.convert_index(index))?;
+            return Ok(())
+        };
+
+        Err("Cannot find tile without adjacent mines!".into())
+    }
 
     pub(super) fn iter_ordinate(&self, coord: Coordinate, radius: usize, ordinate: Ordinate) -> Range<usize> {
         let val = coord.get_ordinate(ordinate);
@@ -102,7 +113,7 @@ impl Minefield {
 
         self.index_mut(coord).reveal();
         match self.query_tile(coord) {
-            QueryResult::Mine => return Err(err_msg()),
+            QueryResult::Exploded => return Err(err_msg()),
             QueryResult::Revealed(0) => {},
             QueryResult::Revealed(_) => return Ok(()),
             _ => unreachable!()
@@ -116,7 +127,7 @@ impl Minefield {
                 if tile.is_revealed() || tile.is_flagged() { continue; }
                 self.index_mut(neighbour).reveal();
                 match self.query_tile(neighbour) {
-                    QueryResult::Mine => return Err(err_msg()),
+                    QueryResult::Exploded => return Err(err_msg()),
                     QueryResult::Revealed(0) => stack.push(neighbour),
                     QueryResult::Revealed(_) => {},
                     _ => unreachable!()
@@ -133,20 +144,41 @@ impl Minefield {
     pub fn query_tile(&self, coord: Coordinate) -> QueryResult {
         let tile = self.index(coord);
 
-        if tile.is_flagged() { return QueryResult::Flagged; }
-        if !tile.is_revealed() { return QueryResult::Blank; }
-        if tile.has_mine() { return QueryResult::Mine; }
+        if tile.is_flagged() { return QR::Flagged; }
+        if !tile.is_revealed() { return QR::Blank; }
+        if tile.has_mine() { return QR::Exploded; }
 
         let count = if self.delta { tile.delta_minecount() } else { tile.minecount() as i16 };
-        QueryResult::Revealed(count)
+        QR::Revealed(count)
+    }
+    pub fn query_tile_gameover(&self, coord: Coordinate) -> QueryResult {
+        let tile = self.index(coord);
+        let count = if self.delta { tile.delta_minecount() } else { tile.minecount() as i16 };
+
+        if tile.is_flagged() { 
+            return if tile.has_mine() { QR::GoCorrect } else { QR::GoIncorrect } 
+        }
+        if !tile.is_revealed() { 
+            return if tile.has_mine() { QR::GoMine } else { QR::GoUnrevealed(count) } 
+        }
+        if tile.has_mine() { 
+            return QR::Exploded 
+        }
+        QR::Revealed(count)
     }
 }
+type QR = QueryResult;
 
 pub enum QueryResult {
     Blank,
     Flagged,
     Revealed(i16),
-    Mine,
+    Exploded,
+    // Game Over Exclusive
+    GoMine,
+    GoCorrect,
+    GoIncorrect,
+    GoUnrevealed(i16),
 }
 
 pub fn coordinate(x: usize, y: usize, z: usize, w: usize) -> Coordinate {
