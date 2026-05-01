@@ -1,4 +1,4 @@
-use crate::game::coordinate;
+use crate::minesweeper::coordinate;
 use super::*;
 
 fn debug_minefield() -> Minefield { Minefield::new(coordinate::coordinate(5, 5, 5, 5), 4).unwrap() }

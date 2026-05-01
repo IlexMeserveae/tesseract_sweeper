@@ -2,7 +2,7 @@ use crate::minesweeper::{coordinate, Minefield, QueryResult};
 use eframe::egui::{vec2, Align, Button, Color32, Context, Image, Layout, Margin, PointerButton, Response, RichText, ScrollArea, Ui, Vec2};
 use eframe::{egui, App, Frame};
 use icons::{icon, Icon::*};
-use crate::app::AppPhase::*;
+use crate::tesseract::AppPhase::*;
 use crate::minesweeper::coordinate::{Coordinate, Ordinate};
 
 mod icons;
