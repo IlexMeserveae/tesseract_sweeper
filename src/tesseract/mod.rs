@@ -171,15 +171,6 @@ fn image_tile<'a>(ui: &mut Ui, size: Vec2, image: Image, mut color: Color32, hig
 }
 
 fn minecount_text(minecount: i16) -> RichText {
-    let color = match minecount {
-        x if x <= -1    => colors::MINECOUNT_NEGATIVE,
-        0                   => colors::MINECOUNT_ZERO,
-        1                   => colors::MINECOUNT_ONE,
-        2                   => colors::MINECOUNT_TWO,
-        3 | 4               => colors::MINECOUNT_FOUR,
-        5 | 6               => colors::MINECOUNT_SIX,
-        7 | 8 | 9 | 10      => colors::MINECOUNT_TEN,
-        _                   => colors::MINECOUNT_MAX,
-    };
+    let color = colors::minecount_color(minecount);
     RichText::new(minecount.to_string()).color(color)
 }
