@@ -1,6 +1,6 @@
 use crate::tesseract::TesseractApp;
 use crate::minesweeper::{coordinate, Minefield};
-use crate::Presets::Medium3D;
+use crate::Presets::{Medium2D, Medium3D, Medium4D};
 use eframe::egui::ViewportBuilder;
 use eframe::{run_native, NativeOptions};
 
@@ -8,14 +8,15 @@ pub(crate) mod tesseract;
 pub(crate) mod minesweeper;
 
 fn main() {
-    let mut mf = Medium3D.generate();
+    let mut mf = Presets::Medium4D.generate();
     mf.quickstart().unwrap();
     let mut app = TesseractApp::default();
     app.set_minefield(mf.into());
     let options = NativeOptions {
         viewport: ViewportBuilder::default()
             .with_resizable(true)
-            .with_inner_size([1050., 1050.]),
+            .with_inner_size([1050., 1050.])
+            .with_maximized(true),
         ..Default::default()
     };
 
@@ -53,9 +54,9 @@ impl Presets {
             Presets::Small3D => 8,
             Presets::Medium3D => 32,
             Presets::Large3D => 128,
-            Presets::Small4D => 8,
-            Presets::Medium4D => 16,
-            Presets::Large4D => 32,
+            Presets::Small4D => 10,
+            Presets::Medium4D => 20,
+            Presets::Large4D => 40,
         };
 
         Minefield::new(size, mines).unwrap()

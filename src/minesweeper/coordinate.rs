@@ -29,6 +29,7 @@ impl Coordinate {
     }
     pub fn get_xy(&self) -> (usize, usize) { (self.x, self.y) }
     pub fn get_zw(&self) -> (usize, usize) { (self.z, self.w) }
+    pub fn multiply_out(&self) -> usize { self.x * self.y * self.w * self.z }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

@@ -1,12 +1,14 @@
 use crate::minesweeper::{coordinate, Minefield, QueryResult};
-use eframe::egui::{vec2, Align, Button, Color32, Context, Image, Layout, Margin, PointerButton, Response, RichText, ScrollArea, Ui, Vec2};
+use eframe::egui::{Button, Color32, Context, Image, Margin, PointerButton, Response, RichText, ScrollArea, Ui, Vec2};
 use eframe::{egui, App, Frame};
 use icons::{icon, Icon::*};
+use tile_settings::TileSettings;
 use crate::tesseract::AppPhase::*;
 use crate::minesweeper::coordinate::{Coordinate, Ordinate};
 
 mod icons;
 mod colors;
+mod tile_settings;
 
 #[derive(Default)]
 enum AppPhase {
@@ -38,22 +40,19 @@ impl TesseractApp {
     }
 
     fn display_minefield(&mut self, ui: &mut Ui) {
-        let layout = Layout::default()
-            .with_main_align(Align::Center).with_cross_align(Align::Center);
-        ui.with_layout(layout, |ui| {
-            egui::Frame::new().inner_margin(Margin::symmetric(12, 12))
-                .show(ui, |ui| {
-                    let spacing = self.settings.big_gap_size();
-                    egui::Grid::new("minefield").spacing(spacing).show(ui, |ui| {
-                        for w in 1..=self.minefield.as_ref().unwrap().length(Ordinate::W) {
-                            for z in 1..=self.minefield.as_ref().unwrap().length(Ordinate::Z) {
-                                self.display_subfield(ui, w, z);
-                            }
-                            ui.end_row();
+        // ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        //     ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                let spacing = self.settings.big_gap_size();
+                egui::Grid::new("minefield").spacing(spacing).show(ui, |ui| {
+                    for w in 1..=self.minefield.as_ref().unwrap().length(Ordinate::W) {
+                        for z in 1..=self.minefield.as_ref().unwrap().length(Ordinate::Z) {
+                            self.display_subfield(ui, w, z);
                         }
-                    });
+                        ui.end_row();
+                    }
                 });
-        });
+        //     });
+        // });
     }
     fn display_subfield(&mut self, ui: &mut Ui, w: usize, z: usize) {
         let spacing = self.settings.little_gap_size();
@@ -78,12 +77,15 @@ impl TesseractApp {
             _ => unreachable!(),
         };
         let button = match query {
+            QueryResult::Blank => {
+                text_tile(ui, size, RichText::new(""), colors::TILE_REVEALED, highlighted)
+            }
             QueryResult::Revealed(minecount) => {
                 text_tile(ui, size, minecount_text(minecount), colors::TILE_REVEALED, highlighted)
             }
-            QueryResult::Blank => {
+            QueryResult::Hidden => {
                 let button = text_tile(ui, size, RichText::new(""),
-                                       colors::TILE_BLANK, highlighted);
+                                       colors::TILE_HIDDEN, highlighted);
 
                 if button.clicked_by(PointerButton::Primary) {
                     if field.reveal(coord).is_err() { self.next_phase = GameLost.into(); }
@@ -92,9 +94,9 @@ impl TesseractApp {
                     field.toggle_flagged(coord);
                 }
                 button
-            },
+            }
             QueryResult::Flagged => {
-                let button = image_tile(ui, size, icon(RedFlag), colors::TILE_BLANK,
+                let button = image_tile(ui, size, icon(RedFlag), colors::TILE_HIDDEN,
                                         highlighted);
 
                 if button.clicked_by(PointerButton::Secondary) {
@@ -141,15 +143,18 @@ impl App for TesseractApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let layout = Layout::top_down(Align::Center).with_main_align(Align::Center);
-            ui.with_layout(layout, |ui| {
-                ScrollArea::both().show(ui, |ui| {
-                    match self.current_phase {
-                        GameRunning | GameLost => self.display_minefield(ui),
-                        _ => {}
-                    }
+            // ui.|ui| {
+                egui::Frame::new().inner_margin(Margin::symmetric(16, 16))
+                    // .fill(Color32::GREEN)
+                    .show(ui, |ui| {
+                    ScrollArea::both().show(ui, |ui| {
+                        match self.current_phase {
+                            GameRunning | GameLost => self.display_minefield(ui),
+                            _ => {}
+                        }
+                    });
                 });
-            });
+            // });
         });
     }
 }
@@ -166,44 +171,15 @@ fn image_tile<'a>(ui: &mut Ui, size: Vec2, image: Image, mut color: Color32, hig
 }
 
 fn minecount_text(minecount: i16) -> RichText {
-    if minecount == 0 { return RichText::new(""); }
     let color = match minecount {
-        x if x <= -1 => colors::MINECOUNT_NEGATIVE,
-        x if x ==  1 => colors::MINECOUNT_ONE,
-        x if x <=  2 => colors::MINECOUNT_TWO,
-        x if x <=  4 => colors::MINECOUNT_FOUR,
-        x if x <=  6 => colors::MINECOUNT_SIX,
-        x if x <= 10 => colors::MINECOUNT_TEN,
-        _ => colors::MINECOUNT_MAX,
+        x if x <= -1    => colors::MINECOUNT_NEGATIVE,
+        0                   => colors::MINECOUNT_ZERO,
+        1                   => colors::MINECOUNT_ONE,
+        2                   => colors::MINECOUNT_TWO,
+        3 | 4               => colors::MINECOUNT_FOUR,
+        5 | 6               => colors::MINECOUNT_SIX,
+        7 | 8 | 9 | 10      => colors::MINECOUNT_TEN,
+        _                   => colors::MINECOUNT_MAX,
     };
     RichText::new(minecount.to_string()).color(color)
-}
-
-pub struct TileSettings {
-    hor_tile_scaling: f32,
-    ver_tile_scaling: f32,
-}
-impl Default for TileSettings {
-    fn default() -> Self {
-        Self { hor_tile_scaling: 0.50, ver_tile_scaling: 0.50 }
-    }
-}
-impl TileSettings {
-    const TILE: u16 = 90;
-    pub fn tile_size(&self) -> Vec2 {
-        vec2(Self::TILE as f32 * self.hor_tile_scaling,
-             Self::TILE as f32 * self.ver_tile_scaling)
-    }
-
-    const LITTLE_GAP: u16 = 10;
-    pub fn little_gap_size(&self) -> Vec2 {
-        vec2(Self::LITTLE_GAP as f32 * self.hor_tile_scaling,
-             Self::LITTLE_GAP as f32 * self.ver_tile_scaling)
-    }
-
-    const BIG_GAP: u16 = 100;
-    pub fn big_gap_size(&self) -> Vec2 {
-        vec2(Self::BIG_GAP as f32 * self.hor_tile_scaling,
-             Self::BIG_GAP as f32 * self.ver_tile_scaling)
-    }
 }

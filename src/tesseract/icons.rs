@@ -43,8 +43,6 @@ static ICONS: [(&str, [(&str, ImageSource); 3]); 3] = load_icons!(
 );
 static STYLE: Mutex<IconStyle> = Mutex::new(IconStyle::Modern);
 
-type IconMap = HashMap<(Icon, IconStyle), ImageSource<'static>>;
-
 pub fn icon(icon: Icon) -> Image<'static> {
     let icon_snake = icon.snake();
     let style_snake = STYLE.lock().unwrap().snake();

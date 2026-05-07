@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::collections::VecDeque;
 use std::ops::Range;
 use rand::random;
 use coordinate::{Coordinate, Ordinate};
@@ -11,7 +12,9 @@ pub mod coordinate;
 mod tile;
 
 pub struct Minefield {
-    size: Coordinate, tiles: Vec<Tile>, mines_remaining: i16, delta: bool
+    size: Coordinate, tiles: Vec<Tile>, 
+    total_mines: i16, flagged_mines: i16, blanks_remaining: i16, 
+    delta: bool
 }
 impl Minefield {
     pub fn new(size: Coordinate, mine_count: u16) -> Result<Self, String> {
@@ -31,8 +34,8 @@ impl Minefield {
         }
         let tiles = tiles.into_iter().map(|mine| Tile::new(mine)).collect();
 
-        let mut field = Self { size, tiles,
-            mines_remaining: mine_count as i16, delta: true };
+        let mut field = Self { size, tiles, total_mines: mine_count as i16, 
+            flagged_mines: 0, blanks_remaining: size.multiply_out() as i16, delta: true };
 
         for index in mine_positions {
             let coord = field.convert_index(index);
@@ -48,7 +51,8 @@ impl Minefield {
         while count < 10000 {
             let index = random::<u32>() as usize % self.tiles.len();
             if self.tiles[index].minecount() > 0 { count += 1; continue; }
-            self.reveal(self.convert_index(index))?;
+            if self.tiles[index].has_mine() { continue}
+            self.reveal(self.convert_index(index)).expect("Not Possible!");
             return Ok(())
         };
 
@@ -106,33 +110,57 @@ impl Minefield {
             if flagged { self.index_mut(neighbour).increase_flagged_minecount() }
             else { self.index_mut(neighbour).decrease_flagged_minecount() }.unwrap()
         };
-        self.mines_remaining -= 1;
+        self.flagged_mines += if flagged { 1 } else { -1 };
         flagged
     }
-    pub fn reveal(&mut self, coord: Coordinate) -> Result<(), String> {
-        let err_msg = || "There was a mine there!".to_string();
 
-        self.index_mut(coord).reveal();
-        match self.query_tile(coord) {
-            QueryResult::Exploded => return Err(err_msg()),
-            QueryResult::Revealed(0) => {},
-            QueryResult::Revealed(_) => return Ok(()),
-            _ => unreachable!()
-        }
+    fn reveal_inner(&mut self, coord: Coordinate) -> Result<u16, String> {
+        let mut revealed = 0;
 
-        // Chain reveal
         let mut stack = vec![coord];
         while let Some(coord) = stack.pop() {
+            revealed += 1;
+            self.index_mut(coord).reveal()?;
+
+            let is_zero = QR::Revealed(0) == self.query_tile(coord);
+            let mut hidden_neighbours = 0;
+            for next in self.get_neighbours(coord, 1) {
+                let tile = self.index_mut(next);
+                tile.decrease_hidden_neighbours();
+                if tile.is_revealed() { continue; }
+                hidden_neighbours += 1;
+                if tile.is_flagged() || !is_zero || stack.contains(&next) { continue; }
+                stack.push(next);
+            }
+            self.index_mut(coord).set_hidden_count(hidden_neighbours);
+        };
+
+        Ok(revealed)
+    }
+    pub fn reveal(&mut self, coord: Coordinate) -> Result<(), String> {
+        if self.reveal_inner(coord)? > 0 { return Ok(()); }
+
+        let mut zeros = vec![];
+        let mut zero_queue = VecDeque::from(vec![coord]);
+        while let Some(coord) = zero_queue.pop_front() {
             for neighbour in self.get_neighbours(coord, 1) {
-                let tile = self.index(neighbour);
-                if tile.is_revealed() || tile.is_flagged() { continue; }
-                self.index_mut(neighbour).reveal();
+                if zeros.contains(&neighbour) { continue; }
                 match self.query_tile(neighbour) {
-                    QueryResult::Exploded => return Err(err_msg()),
-                    QueryResult::Revealed(0) => stack.push(neighbour),
-                    QueryResult::Revealed(_) => {},
-                    _ => unreachable!()
+                    QR::Revealed(0) => {
+                        zeros.push(neighbour);
+                        zero_queue.push_back(neighbour);
+                    },
+                    _ => {}
                 }
+            }
+        }
+
+        if zeros.is_empty() { return Ok(()); }
+        for zero in zeros {
+            for neighbour in self.get_neighbours(zero, 1) {
+                let tile = self.index_mut(neighbour);
+                if tile.is_revealed() || tile.is_flagged() { continue; }
+                self.reveal_inner(coord)?;
             }
         };
 
@@ -140,16 +168,17 @@ impl Minefield {
     }
 
     pub fn delta(&self) -> bool { self.delta }
-    pub fn mines_remaining(&self) -> i16 { self.mines_remaining }
+    pub fn mines_remaining(&self) -> i16 { self.total_mines - self.flagged_mines }
     pub fn length(&self, ordinate: Ordinate) -> usize { self.size.get_ordinate(ordinate) }
     pub fn query_tile(&self, coord: Coordinate) -> QueryResult {
         let tile = self.index(coord);
+        let count = if self.delta { tile.delta_minecount() } else { tile.minecount() as i16 };
 
         if tile.is_flagged() { return QR::Flagged; }
-        if !tile.is_revealed() { return QR::Blank; }
+        if !tile.is_revealed() { return QR::Hidden; }
         if tile.has_mine() { return QR::Exploded; }
+        if tile.is_blank() { return QR::Blank; }
 
-        let count = if self.delta { tile.delta_minecount() } else { tile.minecount() as i16 };
         QR::Revealed(count)
     }
     pub fn query_tile_gameover(&self, coord: Coordinate) -> QueryResult {
@@ -165,15 +194,21 @@ impl Minefield {
         if tile.has_mine() { 
             return QR::Exploded 
         }
+        if tile.is_blank() {
+            return QR::Blank;
+        }
+
         QR::Revealed(count)
     }
 }
 
 type QR = QueryResult;
+#[derive(PartialEq)]
 pub enum QueryResult {
-    Blank,
+    Hidden,
     Flagged,
     Revealed(i16),
+    Blank,
     Exploded,
     // Game Over Exclusive
     GoMine,
