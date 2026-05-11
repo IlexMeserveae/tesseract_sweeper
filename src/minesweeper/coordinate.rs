@@ -19,7 +19,7 @@ impl Coordinate {
     pub fn y(&self) -> usize { self.y }
     pub fn z(&self) -> usize { self.z }
     pub fn w(&self) -> usize { self.w }
-    pub fn get_ordinate(&self, ordinate: Ordinate) -> usize {
+    pub fn get(&self, ordinate: Ordinate) -> usize {
         match ordinate {
             Ordinate::X => self.x,
             Ordinate::Y => self.y,

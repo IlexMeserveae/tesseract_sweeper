@@ -3,6 +3,7 @@ use crate::minesweeper::{coordinate, Minefield};
 use crate::Presets::{Medium2D, Medium3D, Medium4D};
 use eframe::egui::ViewportBuilder;
 use eframe::{run_native, NativeOptions};
+use crate::minesweeper::coordinate::coordinate;
 
 pub(crate) mod tesseract;
 pub(crate) mod minesweeper;

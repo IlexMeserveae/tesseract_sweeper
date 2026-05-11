@@ -4,12 +4,13 @@ use std::ops::Range;
 use rand::random;
 use coordinate::{Coordinate, Ordinate};
 use tile::Tile;
+use crate::minesweeper::tile::{TileError, TileResult};
 
 #[cfg(test)]
 mod tests;
 
 pub mod coordinate;
-mod tile;
+pub mod tile;
 
 pub struct Minefield {
     size: Coordinate, tiles: Vec<Tile>, 
@@ -17,6 +18,18 @@ pub struct Minefield {
     delta: bool
 }
 impl Minefield {
+    fn neighbour_no(field_size: Coordinate, index: usize) -> u16 {
+        let mut tiles = 81;
+        let coord = Self::convert_index(field_size, index);
+        for ord in [Ordinate::X, Ordinate::Y, Ordinate::Z, Ordinate::W] {
+            let size_ord = field_size.get(ord);
+            let coord_ord = coord.get(ord);
+            if coord_ord == 1 || coord_ord == size_ord { tiles *= 2; tiles /= 3; }
+            if size_ord == 1 { tiles /= 2; }
+        };
+        tiles - 1
+    }
+
     pub fn new(size: Coordinate, mine_count: u16) -> Result<Self, String> {
         let mut tiles = vec![false; size.x() * size.y() * size.z() * size.w()];
         if tiles.len() == 0 { return Err("Minefield dimensions cannot be zero.".to_string()); }
@@ -32,13 +45,14 @@ impl Minefield {
             mine_positions.push(index);
             count -= 1;
         }
-        let tiles = tiles.into_iter().map(|mine| Tile::new(mine)).collect();
+        let tiles = tiles.into_iter().enumerate().map(|(i, mine)|
+            Tile::new(mine, Self::neighbour_no(size, i))).collect();
 
         let mut field = Self { size, tiles, total_mines: mine_count as i16, 
             flagged_mines: 0, blanks_remaining: size.multiply_out() as i16, delta: true };
 
         for index in mine_positions {
-            let coord = field.convert_index(index);
+            let coord = Self::convert_index(size, index);
             for neighbour in field.get_neighbours(coord, 1) {
                 field.index_mut(neighbour).count_mine();
             };
@@ -50,9 +64,9 @@ impl Minefield {
         let mut count = 0;
         while count < 10000 {
             let index = random::<u32>() as usize % self.tiles.len();
-            if self.tiles[index].minecount() > 0 { count += 1; continue; }
+            if self.tiles[index].true_minecount() > 0 { count += 1; continue; }
             if self.tiles[index].has_mine() { continue}
-            self.reveal(self.convert_index(index)).expect("Not Possible!");
+            self.reveal(Self::convert_index(self.size, index)).expect("Not Possible!");
             return Ok(())
         };
 
@@ -60,7 +74,7 @@ impl Minefield {
     }
 
     pub(super) fn iter_ordinate(&self, coord: Coordinate, radius: usize, ordinate: Ordinate) -> Range<usize> {
-        let val = coord.get_ordinate(ordinate);
+        let val = coord.get(ordinate);
         let len = self.length(ordinate);
         (max(val, radius + 1) - radius)..min(val + radius + 1, len + 1)
     }
@@ -80,11 +94,11 @@ impl Minefield {
         neighbours
     }
 
-    fn convert_index(&self, mut index: usize) -> Coordinate {
-        let x = 1 + index % self.size.x(); index /= self.size.x();
-        let y = 1 + index % self.size.y(); index /= self.size.y();
-        let z = 1 + index % self.size.z(); index /= self.size.z();
-        let w = 1 + index % self.size.w();
+    fn convert_index(size: Coordinate, mut index: usize) -> Coordinate {
+        let x = 1 + index % size.x(); index /= size.x();
+        let y = 1 + index % size.y(); index /= size.y();
+        let z = 1 + index % size.z(); index /= size.z();
+        let w = 1 + index % size.w();
         coordinate::coordinate(x, y, z, w)
     }
     fn convert_coord(&self, coord: Coordinate) -> usize {
@@ -114,7 +128,7 @@ impl Minefield {
         flagged
     }
 
-    fn reveal_inner(&mut self, coord: Coordinate) -> Result<u16, String> {
+    fn reveal_inner(&mut self, coord: Coordinate) -> Result<u16, TileError> {
         let mut revealed = 0;
 
         let mut stack = vec![coord];
@@ -123,22 +137,21 @@ impl Minefield {
             self.index_mut(coord).reveal()?;
 
             let is_zero = QR::Revealed(0) == self.query_tile(coord);
-            let mut hidden_neighbours = 0;
             for next in self.get_neighbours(coord, 1) {
                 let tile = self.index_mut(next);
-                tile.decrease_hidden_neighbours();
+                tile.decrease_hidden_neighbours()?;
+
                 if tile.is_revealed() { continue; }
-                hidden_neighbours += 1;
                 if tile.is_flagged() || !is_zero || stack.contains(&next) { continue; }
                 stack.push(next);
             }
-            self.index_mut(coord).set_hidden_count(hidden_neighbours);
         };
 
         Ok(revealed)
     }
-    pub fn reveal(&mut self, coord: Coordinate) -> Result<(), String> {
-        if self.reveal_inner(coord)? > 0 { return Ok(()); }
+    pub fn reveal(&mut self, coord: Coordinate) -> TileResult {
+        self.reveal_inner(coord)?;
+        if !self.delta { return Ok(()); }
 
         let mut zeros = vec![];
         let mut zero_queue = VecDeque::from(vec![coord]);
@@ -155,7 +168,11 @@ impl Minefield {
             }
         }
 
-        if zeros.is_empty() { return Ok(()); }
+        // // Debug
+        // for &z in &zeros {
+        //     self.index_mut(z).toggle_debug_mark();
+        // }
+
         for zero in zeros {
             for neighbour in self.get_neighbours(zero, 1) {
                 let tile = self.index_mut(neighbour);
@@ -169,38 +186,42 @@ impl Minefield {
 
     pub fn delta(&self) -> bool { self.delta }
     pub fn mines_remaining(&self) -> i16 { self.total_mines - self.flagged_mines }
-    pub fn length(&self, ordinate: Ordinate) -> usize { self.size.get_ordinate(ordinate) }
+    pub fn length(&self, ordinate: Ordinate) -> usize { self.size.get(ordinate) }
     pub fn query_tile(&self, coord: Coordinate) -> QueryResult {
         let tile = self.index(coord);
-        let count = if self.delta { tile.delta_minecount() } else { tile.minecount() as i16 };
+        let count = tile.minecount(self.delta);
+
+        // Debug
+        if tile.is_debug_marked() { return QueryResult::DebugMarked; }
 
         if tile.is_flagged() { return QR::Flagged; }
         if !tile.is_revealed() { return QR::Hidden; }
         if tile.has_mine() { return QR::Exploded; }
-        if tile.is_blank() { return QR::Blank; }
+        if tile.is_blank(self.delta) { return QR::Blank; }
 
         QR::Revealed(count)
     }
     pub fn query_tile_gameover(&self, coord: Coordinate) -> QueryResult {
         let tile = self.index(coord);
-        let count = if self.delta { tile.delta_minecount() } else { tile.minecount() as i16 };
+        let count = tile.minecount(self.delta);
 
         if tile.is_flagged() { 
             return if tile.has_mine() { QR::GoCorrect } else { QR::GoIncorrect } 
         }
         if !tile.is_revealed() { 
-            return if tile.has_mine() { QR::GoMine } else { QR::GoUnrevealed(count) } 
+            return if tile.has_mine() { QR::GoMine } else { QR::GoHidden(count) } 
         }
         if tile.has_mine() { 
             return QR::Exploded 
         }
-        if tile.is_blank() {
+        if tile.is_blank(self.delta) {
             return QR::Blank;
         }
 
         QR::Revealed(count)
     }
 }
+
 
 type QR = QueryResult;
 #[derive(PartialEq)]
@@ -214,6 +235,8 @@ pub enum QueryResult {
     GoMine,
     GoCorrect,
     GoIncorrect,
-    GoUnrevealed(i16),
+    GoHidden(i16),
+    // Debug Exclusive
+    DebugMarked,
 }
 
