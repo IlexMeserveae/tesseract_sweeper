@@ -134,7 +134,8 @@ impl Minefield {
         let mut stack = vec![coord];
         while let Some(coord) = stack.pop() {
             revealed += 1;
-            self.index_mut(coord).reveal()?;
+            let e = self.index_mut(coord).reveal();
+            e.expect("Failed to reveal!");
 
             let is_zero = QR::Revealed(0) == self.query_tile(coord);
             for next in self.get_neighbours(coord, 1) {
@@ -177,7 +178,7 @@ impl Minefield {
             for neighbour in self.get_neighbours(zero, 1) {
                 let tile = self.index_mut(neighbour);
                 if tile.is_revealed() || tile.is_flagged() { continue; }
-                self.reveal_inner(coord)?;
+                self.reveal_inner(neighbour)?;
             }
         };
 

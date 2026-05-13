@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
-use crate::minesweeper::tile::TileError::{Exploded, Underflow, Overflow};
+use crate::minesweeper::tile::TileError::{Exploded, Underflow, Overflow, AlreadyRevealed};
 
 pub struct Tile {
     has_mine: bool, is_flagged: bool, is_revealed: bool,
@@ -12,6 +12,7 @@ pub struct Tile {
 pub type TileResult = Result<(), TileError>;
 pub enum TileError {
     Exploded,
+    AlreadyRevealed,
     Overflow(String),
     Underflow(String),
 }
@@ -19,6 +20,7 @@ impl Debug for TileError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Exploded => write!(f, "There was a mine there!"),
+            AlreadyRevealed => write!(f, "The tile is already revealed!"),
             Underflow(msg) => write!(f, "{}", msg),
             Overflow(msg) => write!(f, "{}", msg),
         }
@@ -87,6 +89,7 @@ impl Tile {
         self.is_flagged = !(self.is_flagged || self.is_revealed);
     }
     pub(crate) fn reveal(&mut self) -> TileResult {
+        if self.is_revealed { return Err(AlreadyRevealed) }
         self.is_revealed = true;
         self.is_flagged = false;
         if self.has_mine { Err(Exploded) } else { Ok(()) }

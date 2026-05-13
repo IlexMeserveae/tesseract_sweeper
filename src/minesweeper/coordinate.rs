@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 pub fn coordinate(x: usize, y: usize, z: usize, w: usize) -> Coordinate {
     Coordinate::new(x , y, z, w).unwrap()
 }
@@ -5,6 +7,12 @@ pub fn coordinate(x: usize, y: usize, z: usize, w: usize) -> Coordinate {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Coordinate {
     x: usize, y: usize, z: usize, w: usize
+}
+
+impl Display for Coordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {}, {})", self.x, self.y, self.z, self.w)
+    }
 }
 
 impl Coordinate {

@@ -67,6 +67,14 @@ impl TesseractApp {
         self.minefield = None;
         self.next_phase = NoGame.into();
     }
+    fn enable_dev_mode(&mut self) {
+        self.dev_mode = true;
+    }
+    fn disable_dev_mode(&mut self) {
+        self.dev_mode = false;
+        self.inspected_tile = None;
+        self.mouse_tool = None;
+    }
 }
 
 mod top_bar {
@@ -117,40 +125,51 @@ mod top_bar {
 mod dev_panel {
     use crate::tesseract::{MouseTool, TesseractApp};
     use eframe::egui;
-    use eframe::egui::{Button, Context, RichText};
+    use eframe::egui::{Button, Context, RichText, Ui};
 
     impl TesseractApp {
         pub(super) fn show_dev_panel(&mut self, ctx: &Context) {
             egui::SidePanel::right("Side Panel").show(ctx, |ui| {
                 ui.vertical(|ui| {
-
-                    ui.horizontal(|ui| {
-                        if ui.add(Button::new(RichText::new("Inspect Tile"))).clicked() {
-                            self.mouse_tool.get_or_insert(MouseTool::DevTileInspect);
-                        };
-                        if self.mouse_tool == Some(MouseTool::DevTileInspect) {
-                            if ui.add(Button::new(RichText::new("Cancel"))).clicked() {
-                                self.mouse_tool = None;
-                            }
-                        }
-                    });
-
-                    if let Some(coord) = self.inspected_tile {
-                        let tile = self.minefield.as_ref().unwrap().index(coord);
-                        ui.vertical(|ui| {
-                            ui.label(
-                                format!("True minecount: {}", tile.true_minecount())
-                            );
-                            ui.label(
-                                format!("Hidden neighbours: {}", tile.hidden_neighbours())
-                            );
-                            ui.label(
-                                format!("Has mine: {}", tile.has_mine())
-                            );
-                        });
-                    }
+                    self.show_inspect(ui);
                 });
             });
+        }
+
+        fn show_inspect(&mut self, ui: &mut Ui) {
+            ui.horizontal(|ui| {
+                if ui.add(Button::new(RichText::new("Inspect Tile"))).clicked() {
+                    self.mouse_tool.get_or_insert(MouseTool::DevTileInspect);
+                };
+                if self.mouse_tool == Some(MouseTool::DevTileInspect) {
+                    if ui.add(Button::new(RichText::new("Cancel"))).clicked() {
+                        self.mouse_tool = None;
+                    }
+                }
+                else if self.inspected_tile.is_some() {
+                    if ui.add(Button::new(RichText::new("Deselect"))).clicked() {
+                        self.inspected_tile = None;
+                    }
+                }
+            });
+
+            if let Some(coord) = self.inspected_tile {
+                let tile = self.minefield.as_ref().unwrap().index(coord);
+                ui.vertical(|ui| {
+                    ui.label(
+                        format!("Tile at: {}", coord)
+                    );
+                    ui.label(
+                        format!("True minecount: {}", tile.true_minecount())
+                    );
+                    ui.label(
+                        format!("Hidden neighbours: {}", tile.hidden_neighbours())
+                    );
+                    ui.label(
+                        format!("Has mine: {}", tile.has_mine())
+                    );
+                });
+            }
         }
     }
 }

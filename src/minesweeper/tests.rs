@@ -22,3 +22,22 @@ fn get_neighbours_test_2() {
     assert!(result.contains(&coordinate::coordinate(2, 3, 5, 5)));
     assert!(result.contains(&coordinate::coordinate(1, 1, 4, 3)));
 }
+
+// #[test]
+// fn cascade_test() {
+//     let size = coordinate::coordinate(5, 5, 1, 1);
+//     let tiles = vec![
+//         0, 0, 0, 1, 0,
+//         0, 0, 1, 0, 0,
+//         0, 0, 0, 0, 0,
+//         0, 0, 0, 0, 0,
+//         0, 1, 0, 0, 0,
+//     ];
+//     let total_mines = tiles.iter().filter(|&&t| t == 1).count() as i16;
+//     let tiles: Vec<_> = tiles.into_iter().enumerate().map(|(i, mine)|
+//         Tile::new(mine == 1, Minefield::neighbour_no(size, i))).collect();
+//     let flagged_mines = 0;
+//     let blanks_remaining = tiles.len() as i16;
+//     let delta = true;
+//     let mut mf = Minefield { size, tiles, total_mines, flagged_mines, blanks_remaining, delta };
+// }

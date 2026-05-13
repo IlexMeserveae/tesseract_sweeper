@@ -1,15 +1,13 @@
-use crate::tesseract::TesseractApp;
 use crate::minesweeper::{coordinate, Minefield};
-use crate::Presets::{Medium2D, Medium3D, Medium4D};
+use crate::tesseract::TesseractApp;
 use eframe::egui::ViewportBuilder;
 use eframe::{run_native, NativeOptions};
-use crate::minesweeper::coordinate::coordinate;
 
 pub(crate) mod tesseract;
 pub(crate) mod minesweeper;
 
 fn main() {
-    let mut mf = Presets::Medium4D.generate();
+    let mut mf = Presets::Medium2D.generate();
     mf.quickstart().unwrap();
     let mut app = TesseractApp::default();
     app.set_minefield(mf.into());
