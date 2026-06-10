@@ -7,10 +7,6 @@ pub(crate) mod tesseract;
 pub(crate) mod minesweeper;
 
 fn main() {
-    let mut mf = Presets::Medium2D.generate();
-    mf.quickstart().unwrap();
-    let mut app = TesseractApp::default();
-    app.set_minefield(mf.into());
     let options = NativeOptions {
         viewport: ViewportBuilder::default()
             .with_resizable(true)
@@ -19,7 +15,8 @@ fn main() {
         ..Default::default()
     };
 
-    run_native("4D Minesweeper", options, Box::new(|_cc| Ok(Box::new(app)))).unwrap();
+    run_native("Tesseract", options, Box::new(|cc|
+        Ok(Box::new(TesseractApp::new(cc))))).unwrap();
 }
 
 enum Presets {

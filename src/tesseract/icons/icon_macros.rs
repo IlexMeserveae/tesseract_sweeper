@@ -11,7 +11,7 @@ macro_rules! product_helper_1 {
 }
 macro_rules! product_helper_2 {
     ($([[$style:expr][$([$icon:expr])*]])*) => {
-        [$((stringify!($style), [$((stringify!($icon), include_image!(concat!("assets/",
+        [$((stringify!($style), [$((stringify!($icon), include_image!(concat!("../assets/",
         stringify!($icon), "_", stringify!($style), ".png")))),*])),*]
     }
 }

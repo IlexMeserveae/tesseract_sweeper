@@ -4,6 +4,7 @@ use std::ops::Range;
 use rand::random;
 use coordinate::{Coordinate, Ordinate};
 use tile::Tile;
+use crate::minesweeper::coordinate::ORDINATES;
 use crate::minesweeper::tile::{TileError, TileResult};
 
 #[cfg(test)]
@@ -21,7 +22,7 @@ impl Minefield {
     fn neighbour_no(field_size: Coordinate, index: usize) -> u16 {
         let mut tiles = 81;
         let coord = Self::convert_index(field_size, index);
-        for ord in [Ordinate::X, Ordinate::Y, Ordinate::Z, Ordinate::W] {
+        for ord in ORDINATES {
             let size_ord = field_size.get(ord);
             let coord_ord = coord.get(ord);
             if coord_ord == 1 || coord_ord == size_ord { tiles *= 2; tiles /= 3; }
@@ -134,8 +135,7 @@ impl Minefield {
         let mut stack = vec![coord];
         while let Some(coord) = stack.pop() {
             revealed += 1;
-            let e = self.index_mut(coord).reveal();
-            e.expect("Failed to reveal!");
+            self.index_mut(coord).reveal()?;
 
             let is_zero = QR::Revealed(0) == self.query_tile(coord);
             for next in self.get_neighbours(coord, 1) {
@@ -188,6 +188,7 @@ impl Minefield {
     pub fn delta(&self) -> bool { self.delta }
     pub fn mines_remaining(&self) -> i16 { self.total_mines - self.flagged_mines }
     pub fn length(&self, ordinate: Ordinate) -> usize { self.size.get(ordinate) }
+    pub fn game_won(&self) -> bool { self.total_mines == self.blanks_remaining }
     pub fn query_tile(&self, coord: Coordinate) -> QueryResult {
         let tile = self.index(coord);
         let count = tile.minecount(self.delta);

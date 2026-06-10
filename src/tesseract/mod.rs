@@ -1,21 +1,26 @@
 use crate::minesweeper::coordinate::Coordinate;
 use crate::minesweeper::Minefield;
+use crate::tesseract::fonts::{reload_active_fonts, MONOSPACE_FONT, PROPORTIONAL_FONT, TITLE_FONT};
 use crate::tesseract::AppPhase::*;
-use eframe::egui::{Color32, Context, Margin, RichText, ScrollArea};
-use eframe::{egui, App, Frame};
+use eframe::egui::{Color32, Context, Key, Margin, RichText, ScrollArea};
+use eframe::{egui, App, CreationContext, Frame};
 use std::cmp::{min, PartialEq};
+use std::ops::AddAssign;
 use tile_settings::TileSettings;
 
 mod icons;
 mod colors;
+mod fonts;
 mod tile_settings;
 
-#[derive(Default)]
+#[derive(Default, Eq, PartialEq)]
 enum AppPhase {
     #[default]
-    NoGame,
+    MainMenu,
+    SizeMenu,
     GameRunning,
     GameLost,
+    GameWon,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -38,9 +43,25 @@ pub struct TesseractApp {
 
     dev_mode: bool,
     inspected_tile: Option<Coordinate>,
+
+    pick_ord_sizes: [f32; 4],
+    pick_mine_count: f32,
+    
 }
-impl Default for TesseractApp {
-    fn default() -> Self {
+
+impl TesseractApp {
+    
+
+    pub fn new(cc: &CreationContext) -> Self {
+        let ctx = &cc.egui_ctx;
+
+        egui_extras::loaders::install_image_loaders(ctx);
+        fonts::init_fonts();
+        fonts::set_font(&PROPORTIONAL_FONT, "Hack Regular").unwrap();
+        fonts::set_font(&MONOSPACE_FONT,"Hack Regular").unwrap();
+        fonts::set_font(&TITLE_FONT, "Slice").unwrap();
+        reload_active_fonts(ctx);
+
         Self {
             minefield: None,
             settings: TileSettings::default(),
@@ -55,17 +76,19 @@ impl Default for TesseractApp {
 
             dev_mode: false,
             inspected_tile: None,
+
+            pick_ord_sizes: [4.; 4],
+            pick_mine_count: 20.,
         }
     }
-}
-impl TesseractApp {
+
     pub fn set_minefield(&mut self, minefield: Minefield) {
         self.minefield = minefield.into();
         self.next_phase = GameRunning.into();
     }
     pub fn clear_minefield(&mut self) {
         self.minefield = None;
-        self.next_phase = NoGame.into();
+        self.next_phase = MainMenu.into();
     }
     fn enable_dev_mode(&mut self) {
         self.dev_mode = true;
@@ -182,7 +205,7 @@ mod minefield {
     use crate::minesweeper::tile::TileError;
     use crate::minesweeper::{coordinate, QueryResult};
     use eframe::egui;
-    use eframe::egui::{Button, Color32, Image, PointerButton, Response, RichText, Stroke, Ui};
+    use eframe::egui::{Button, Color32, Image, Margin, PointerButton, Response, RichText, ScrollArea, Stroke, Ui};
     use TileType::*;
 
     enum TileType {
@@ -191,9 +214,15 @@ mod minefield {
     }
 
     impl TesseractApp {
+        pub fn display_scroller(&mut self, ui: &mut Ui) {
+            let margin = Margin::symmetric(16, 16);
+            egui::Frame::new().inner_margin(margin).show(ui, |ui| {
+                ScrollArea::both().show(ui, |ui| {
+                    self.display_minefield(ui);
+                });
+            });
+        }
         pub fn display_minefield(&mut self, ui: &mut Ui) {
-            // ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            //     ui.with_layout(Layout::top_down(Align::Center), |ui| {
             let spacing = self.settings.big_gap_size();
             egui::Grid::new("minefield").spacing(spacing).show(ui, |ui| {
                 for w in 1..=self.minefield.as_ref().unwrap().length(Ordinate::W) {
@@ -203,8 +232,6 @@ mod minefield {
                     ui.end_row();
                 }
             });
-            //     });
-            // });
         }
         fn display_subfield(&mut self, ui: &mut Ui, w: usize, z: usize) {
             let spacing = self.settings.little_gap_size();
@@ -304,7 +331,7 @@ mod minefield {
 
             match query {
                 QueryResult::Blank => {}
-                QueryResult::Revealed(minecount) => {}
+                QueryResult::Revealed(_) => {}
                 QueryResult::Hidden => {
                     if button.clicked_by(PointerButton::Primary) {
                         match field.reveal(coord) {
@@ -340,37 +367,278 @@ impl App for TesseractApp {
             self.current_phase = next;
         }
 
+        if self.current_phase == GameRunning && self.minefield.as_ref().unwrap().game_won() {
+            self.current_phase = GameWon;
+        }
+
         self.highlighted_tiles.clear();
-        if let Some(coord) = self.hovered_tile.take() {
-            match self.current_phase {
-                GameRunning => {
+
+        let _ = match self.current_phase {
+            MainMenu => self.update_main_menu(ctx),
+            SizeMenu => self.update_size_menu(ctx),
+            GameRunning => {
+                if let Some(coord) = self.hovered_tile.take() {
                     self.highlighted_tiles = self.minefield.as_ref().unwrap()
                         .get_neighbours(coord, 1);
                 }
-                _ => {}
+
+                self.update_game(ctx)
+            }
+            GameWon | GameLost => self.update_game(ctx),
+        };
+    }
+}
+
+mod update {
+    use super::*;
+    use crate::minesweeper::coordinate::{coordinate, ORDINATES};
+    use crate::tesseract::fonts::{get_scale, title_family};
+    use crate::Presets;
+    use eframe::egui::Align::Center;
+    use eframe::egui::{vec2, Align, AtomExt, Button, FontId, Key, Label, Layout, Ui};
+    use std::mem;
+    use Align::Min;
+    use crate::minesweeper::coordinate::Ordinate::*;
+
+    pub(super) enum UpdateError {}
+    type UpdateResult = Result<(), UpdateError>;
+
+    impl TesseractApp {
+        fn previous_menu_if_escaped(&mut self, ctx: &Context, prev_phase: AppPhase) {
+            if any_pressed(ctx, vec![Key::Escape]) {
+                self.next_phase = Some(prev_phase);
             }
         }
 
-        self.show_top_bar(ctx);
+        pub(super) fn update_main_menu(&mut self, ctx: &Context) -> UpdateResult {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let layout = Layout::top_down(Center);
+                ui.with_layout(layout, |ui| {
+                    let height = ui.available_height();
 
-        if self.dev_mode { self.show_dev_panel(ctx) }
+                    ui.add_space( height * 0.25);
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // ui.|ui| {
-                egui::Frame::new().inner_margin(Margin::symmetric(16, 16))
-                    // .fill(Color32::GREEN)
-                    .show(ui, |ui| {
-                    ScrollArea::both().show(ui, |ui| {
-                        match self.current_phase {
-                            GameRunning | GameLost => self.display_minefield(ui),
-                            _ => {}
-                        }
-                    });
+                    let title = Label::new(RichText::new("Tesseract")
+                        .font(FontId::new(120., title_family())));
+                    ui.add(title);
+
+                    ui.add_space(height * 0.10);
+
+                    let play_default = Button::new(RichText::new("Play Default").size(30.));
+                    if ui.add(play_default).clicked() {
+                        let mut field = Presets::Small4D.generate();
+                        field.quickstart().unwrap();
+                        self.set_minefield(field);
+                    };
+
+                    ui.add_space(height * 0.02);
+
+                    let play_custom = Button::new(RichText::new("Play Custom").size(30.));
+                    if ui.add(play_custom).clicked() {
+                        self.next_phase = Some(SizeMenu)
+                    }
                 });
-            // });
-        });
+            });
+
+            Ok(())
+        }
+
+        pub(super) fn update_size_menu(&mut self, ctx: &Context) -> UpdateResult {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let layout = Layout::top_down(Center);
+                ui.with_layout(layout, |ui| {
+                    let height = ui.available_height();
+
+                    ui.add_space( height * 0.25);
+                    let temp = Label::new(RichText::new("Custom Game").size(50.));
+                    ui.add(temp);
+
+                    ui.add_space(height * 0.10);
+                    let margin = 15.;
+                    let spacing = 20.;
+                    let input_width = 120.;
+                    let input_height = 40.;
+                    let size = vec2(spacing * 3. + input_width * 4. + margin * 2., 0.);
+                    egui::Frame::new().inner_margin(margin).show(ui, |ui| {
+                        let layout = Layout::left_to_right(Center);
+                        ui.allocate_ui_with_layout(size, layout, |ui| {
+                            ui.spacing_mut().item_spacing.x = spacing;
+                            for i in 0..4 {
+                                self.ordinate_box(ui, input_width, input_height, i)
+                            }
+                        })
+                    });
+
+                    Self::int_input(ui, "mines:", 200., input_height,
+                                    1., 4096., 4, &mut self.pick_mine_count);
+
+                    ui.add_space(height * 0.05);
+                    let play_button = Button::new(RichText::new("Play").size(30.));
+                    if ui.add(play_button).clicked() {
+                        let ords = &self.pick_ord_sizes;
+                        let coord = coordinate(ords[0] as usize, ords[1] as usize, ords[2] as usize, ords[3] as usize);
+                        let mines = self.pick_mine_count as u16;
+                        let mf = Minefield::new(coord, mines);
+                        if mf.is_err() {
+                            // TODO
+                            return;
+                        }
+                        let mut mf = mf.unwrap();
+                        mf.quickstart().unwrap();
+                        self.set_minefield(mf);
+                        return;
+                    }
+                })
+            });
+
+            self.previous_menu_if_escaped(ctx, MainMenu);
+
+            Ok(())
+        }
+
+        ///
+        ///
+        /// Creates an integer input widget.
+        ///
+        ///
+        fn int_input(ui: &mut Ui, label: &str, width: f32, height: f32, min: f32, max: f32,
+                     padding: usize, value: &mut f32) {
+            let mut decr = None;
+            let mut incr = None;
+            let mut inpt = None;
+            let font_scale = get_scale(&PROPORTIONAL_FONT);
+
+            let button_width = 18.;
+            let value_width = 24. + 12. * padding as f32;
+
+            let size = vec2(width, height);
+            let layout = Layout::left_to_right(Center);
+            let _ = ui.allocate_ui_with_layout(size, layout, |ui| {
+                ui.set_width(width);
+                ui.spacing_mut().item_spacing.x = 0.;
+
+                let other = f32::min(button_width + value_width + button_width, width);
+                ui.add_sized(vec2(width - other, height), Label::new(
+                    RichText::new(label).size(24. * font_scale)
+                ));
+
+                // Decrement Button
+                decr = ui.add_sized(vec2(button_width, button_width), Button::new(
+                    RichText::new("<").size(20. * font_scale).atom_grow(true)
+                )).into();
+
+                // Value
+                inpt = ui.add_sized(vec2(value_width, height), Label::new(RichText::new(
+                    format!("{:^1$.0}", value, padding)).size(24. * font_scale))).into();
+
+                // Increment Button
+                incr = ui.add_sized(vec2(button_width, button_width), Button::new(
+                    RichText::new(">").size(20. * font_scale).atom_grow(true)
+                )).into();
+            });
+
+            if decr.unwrap().clicked() {
+                let _ = mem::replace(value, f32::max(min, f32::round(*value - 1.)));
+            }
+            if incr.unwrap().clicked() {
+                let _ = mem::replace(value, f32::min(max, f32::round(*value + 1.)));
+            }
+
+            const SCROLL_FACTOR: f32 = 0.02;
+            if let Some(inpt) = inpt && inpt.hovered() {
+                let scroll = inpt.ctx.input(|i| i.raw_scroll_delta);
+                let delta = inpt.ctx.input(|i|
+                    (scroll.x + scroll.y) * SCROLL_FACTOR
+                        * if i.modifiers.ctrl { 10. } else { 1. }
+                        * if i.modifiers.shift { 100. } else { 1. }
+                );
+
+                value.add_assign(delta);
+                if *value < min { let _ = mem::replace(value, min); }
+                if *value > max { let _ = mem::replace(value, max); }
+            }
+
+            // DEBUG
+            // println!("Expected: {width}   Actual: {}", resp.response.rect.width())
+        }
+
+        fn ordinate_box(&mut self, ui: &mut Ui, width: f32, height: f32, index: usize) {
+            let label = format!("{}:", ORDINATES[index].name());
+            Self::int_input(ui, &label, width, height, 1., 64.,
+                            2, &mut self.pick_ord_sizes[index]);
+        }
+
+        pub(super) fn update_game(&mut self, ctx: &Context) -> UpdateResult {
+            self.show_top_bar(ctx);
+
+            if self.dev_mode { self.show_dev_panel(ctx) }
+
+            let mf = self.minefield.as_ref().unwrap();
+            let width = 16. +
+                self.settings.big_gap_size().x * (mf.length(Z) - 1) as f32 +
+                mf.length(Z) as f32 * (
+                    self.settings.little_gap_size().x * (mf.length(X) - 1) as f32 +
+                    mf.length(X) as f32 * (
+                        self.settings.tile_size().x
+                    )
+                );
+            let height = 16. +
+                self.settings.big_gap_size().y * (mf.length(W) - 1) as f32 +
+                mf.length(W) as f32 * (
+                    self.settings.little_gap_size().y * (mf.length(Y) - 1) as f32 +
+                    mf.length(Y) as f32 * (
+                        self.settings.tile_size().y
+                    )
+                );
+
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let size = ui.available_size();
+                let layout = Layout::left_to_right(Min);
+                ui.allocate_ui_with_layout(size, layout, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(0., 0.);
+                    let gap = ui.available_width() - width;
+                    ui.add_space(gap * 0.5);
+
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(0., 0.);
+                        let gap = ui.available_height() - height;
+                        ui.add_space(gap * 0.5);
+
+                        self.display_scroller(ui)
+                    });
+                })
+            });
+
+            Ok(())
+        }
     }
 }
+
+
+
+fn any_pressed(ctx: &Context, keys: Vec<Key>) -> bool {
+    keys.iter().any(|&key| ctx.input(|i| i.key_pressed(key)))
+}
+
+///
+///
+/// Calls try_into() on input and panics if the conversion fails.
+///
+/// Useful when you want to call try_into() with a generic type parameter, and can't assert
+/// that Error implements Display
+///
+/// # Examples
+///
+/// ```
+/// fn decrement_num<T>(num: &mut T) where T: SubAssign + TryFrom<usize> {
+///     num.sub_assign(cast::<usize, T>(1));
+/// }
+/// ```
+// fn cast<A, B>(input: A) -> B where A: TryInto<B> {
+//     input.try_into().unwrap_or_else(|_| panic!("Failed to convert input!"))
+// }
+
 
 fn revealed_background(minecount: i16) -> Color32 {
     if minecount < 0 { return Color32::from_rgb(200, 160, 200) }

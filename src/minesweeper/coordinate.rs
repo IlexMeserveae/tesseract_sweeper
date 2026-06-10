@@ -42,3 +42,18 @@ impl Coordinate {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Ordinate { X, Y, Z, W }
+impl Ordinate {
+    pub fn name(&self) -> &'static str { match self {
+        Ordinate::X => "x",
+        Ordinate::Y => "y",
+        Ordinate::Z => "z",
+        Ordinate::W => "w"
+    }}
+}
+impl Display for Ordinate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name().to_uppercase())
+    }
+}
+
+pub const ORDINATES: [Ordinate; 4] = [Ordinate::X, Ordinate::Y, Ordinate::Z, Ordinate::W];

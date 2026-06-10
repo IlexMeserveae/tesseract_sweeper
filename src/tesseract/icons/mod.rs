@@ -46,11 +46,11 @@ static STYLE: Mutex<IconStyle> = Mutex::new(IconStyle::Modern);
 pub fn icon(icon: Icon) -> Image<'static> {
     let icon_snake = icon.snake();
     let style_snake = STYLE.lock().unwrap().snake();
-    
+
     let src = ICONS
         .iter().find(|(style, _)| *style == style_snake).unwrap().1
         .iter().find(|(icon, _)| *icon == icon_snake).unwrap().1.clone();
-    
+
     Image::new(src)
 }
 
