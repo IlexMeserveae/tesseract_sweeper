@@ -1,7 +1,11 @@
 use crate::minesweeper::coordinate;
 use super::*;
 
-fn debug_minefield() -> Minefield { Minefield::new(coordinate::coordinate(5, 5, 5, 5), 4).unwrap() }
+fn debug_minefield() -> Minefield { 
+    let size = coordinate::coordinate(5, 5, 5, 5);
+    let settings = FieldSettings::new(size, 4).unwrap();
+    Minefield::new(settings) 
+}
 
 #[test]
 fn iter_ordinate_test() {

@@ -1,9 +1,11 @@
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::ops::Range;
+use eframe::egui::util::undoer::Settings;
 use rand::random;
 use coordinate::{Coordinate, Ordinate};
 use tile::Tile;
+use crate::FieldSettings;
 use crate::minesweeper::coordinate::ORDINATES;
 use crate::minesweeper::tile::{TileError, TileResult};
 
@@ -31,11 +33,11 @@ impl Minefield {
         tiles - 1
     }
 
-    pub fn new(size: Coordinate, mine_count: u16) -> Result<Self, String> {
+    pub fn new(settings: FieldSettings) -> Self {
+        let size = settings.size;
+        let mine_count = settings.mine_count;
+        
         let mut tiles = vec![false; size.x() * size.y() * size.z() * size.w()];
-        if tiles.len() == 0 { return Err("Minefield dimensions cannot be zero.".to_string()); }
-        if tiles.len() < mine_count.into() { return Err(
-            String::from("Mine count is too large for the given board dimensions."))}
 
         let mut mine_positions = vec![];
         let mut count = mine_count;
@@ -59,7 +61,7 @@ impl Minefield {
             };
         };
 
-        Ok(field)
+        field
     }
     pub fn quickstart(&mut self) -> Result<(), String> {
         let mut count = 0;

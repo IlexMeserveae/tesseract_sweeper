@@ -51,8 +51,6 @@ pub struct TesseractApp {
 }
 
 impl TesseractApp {
-    
-
     pub fn new(cc: &CreationContext) -> Self {
         let ctx = &cc.egui_ctx;
 
@@ -78,8 +76,8 @@ impl TesseractApp {
             dev_mode: false,
             inspected_tile: None,
 
-            pick_ord_sizes: [4.; 4],
-            pick_mine_count: 12.,
+            pick_ord_sizes: [6.; 4],
+            pick_mine_count: 30.,
         }
     }
 
@@ -440,17 +438,30 @@ mod update {
     use super::*;
     use crate::minesweeper::coordinate::{coordinate, ORDINATES};
     use crate::tesseract::fonts::{get_scale, title_family};
-    use crate::Presets;
+    use crate::{FieldSettings, Preset};
     use eframe::egui::Align::Center;
-    use eframe::egui::{vec2, Align, AtomExt, Button, FontId, Key, Label, Layout, Ui};
+    use eframe::egui::{vec2, Align, AtomExt, Button, FontId, Key, Label, Layout, Response, Ui, ViewportCommand};
     use std::mem;
+    use std::process::Command;
     use Align::Min;
     use crate::minesweeper::coordinate::Ordinate::*;
 
     pub(super) enum UpdateError {}
     type UpdateResult = Result<(), UpdateError>;
 
+
     impl TesseractApp {
+
+        fn play_button(&mut self, ui: &mut Ui, text: &str, preset: Preset) {
+            let play = Button::new(RichText::new(text).size(30.))
+                .fill(Color32::from_gray(28));
+            if ui.add(play).clicked() {
+                let mut field = preset.generate();
+                field.quickstart().unwrap();
+                self.set_minefield(field);
+            };
+        }
+
         fn previous_menu_if_escaped(&mut self, ctx: &Context, prev_phase: AppPhase) -> bool {
             if any_pressed(ctx, vec![Key::Escape]) {
                 self.next_phase = Some(prev_phase);
@@ -474,19 +485,28 @@ mod update {
 
                     ui.add_space(height * 0.10);
 
-                    let play_default = Button::new(RichText::new("Play Default").size(30.));
-                    if ui.add(play_default).clicked() {
-                        let mut field = Presets::Small4D.generate();
-                        field.quickstart().unwrap();
-                        self.set_minefield(field);
-                    };
-
+                    self.play_button(ui, " Play 2D ", Preset::Medium2D);
+                    ui.add_space(height * 0.02);
+                    self.play_button(ui, " Play Small ", Preset::Small4D);
+                    ui.add_space(height * 0.02);
+                    self.play_button(ui, " Play Medium ", Preset::Medium4D);
+                    ui.add_space(height * 0.02);
+                    self.play_button(ui, " Play Large ", Preset::Large4D);
                     ui.add_space(height * 0.02);
 
-                    let play_custom = Button::new(RichText::new("Play Custom").size(30.));
+                    let play_custom = Button::new(RichText::new(" Play Custom ")
+                        .size(30.)).fill(Color32::from_gray(28));
                     if ui.add(play_custom).clicked() {
                         self.next_phase = Some(SizeMenu)
                     }
+                    ui.add_space(height * 0.02);
+
+                    let exit = Button::new(RichText::new(" Quit ")
+                        .size(30.)).fill(Color32::from_gray(28));
+                    if ui.add(exit).clicked() {
+                        ctx.send_viewport_cmd(ViewportCommand::Close);
+                    }
+                    ui.add_space(height * 0.02);
                 });
             });
 
@@ -528,12 +548,14 @@ mod update {
                         let ords = &self.pick_ord_sizes;
                         let coord = coordinate(ords[0] as usize, ords[1] as usize, ords[2] as usize, ords[3] as usize);
                         let mines = self.pick_mine_count as u16;
-                        let mf = Minefield::new(coord, mines);
-                        if mf.is_err() {
+                        let settings = FieldSettings::new(coord, mines);
+                        if settings.is_err() {
                             // TODO
+                            println!("{}", settings.err().unwrap());
                             return;
                         }
-                        let mut mf = mf.unwrap();
+
+                        let mut mf = Minefield::new(settings.unwrap());
                         mf.quickstart().unwrap();
                         self.set_minefield(mf);
                         return;
@@ -661,7 +683,7 @@ mod update {
             });
 
             if self.previous_menu_if_escaped(ctx, AppPhase::MainMenu) {
-
+                // TODO: Continue Last Game
             }
 
             Ok(())
@@ -692,7 +714,6 @@ fn any_pressed(ctx: &Context, keys: Vec<Key>) -> bool {
 // fn cast<A, B>(input: A) -> B where A: TryInto<B> {
 //     input.try_into().unwrap_or_else(|_| panic!("Failed to convert input!"))
 // }
-
 
 fn revealed_background(minecount: i16) -> Color32 {
     if minecount < 0 { return Color32::from_rgb(200, 160, 200) }
