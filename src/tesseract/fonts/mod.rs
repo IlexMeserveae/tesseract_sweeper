@@ -1,9 +1,8 @@
-use std::convert::Into;
-use std::mem;
-use std::sync::{Arc, LazyLock, Mutex};
 use eframe::egui;
-use eframe::egui::{FontData, FontDefinitions, FontFamily};
 use eframe::egui::FontFamily::{Monospace, Proportional};
+use eframe::egui::{FontData, FontDefinitions, FontFamily};
+use std::convert::Into;
+use std::sync::{Arc, LazyLock, Mutex};
 use FontFamily::Name;
 
 pub struct Font {
@@ -20,7 +19,6 @@ impl Font {
 
 type FontMutex = Mutex<Option<Arc<Font>>>;
 
-static FONT_SCALING: Mutex<f32> = Mutex::new(1.0);
 pub static PROPORTIONAL_FONT: FontMutex = Mutex::new(None);
 pub static MONOSPACE_FONT: FontMutex = Mutex::new(None);
 pub static TITLE_FONT: FontMutex = Mutex::new(None);

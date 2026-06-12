@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::minesweeper::{coordinate, Minefield};
 use crate::tesseract::TesseractApp;
 use eframe::egui::ViewportBuilder;
@@ -8,11 +9,15 @@ pub(crate) mod tesseract;
 pub(crate) mod minesweeper;
 
 fn main() {
+    let icon_data = eframe::icon_data::from_png_bytes(include_bytes!("./icon.png"))
+        .expect("Failed to load icon!");
+
     let options = NativeOptions {
         viewport: ViewportBuilder::default()
             .with_resizable(true)
             .with_inner_size([1024., 1024.])
-            .with_maximized(true),
+            .with_maximized(true)
+            .with_icon(Arc::new(icon_data)),
         ..Default::default()
     };
 

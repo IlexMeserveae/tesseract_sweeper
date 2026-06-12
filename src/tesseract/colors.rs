@@ -1,6 +1,4 @@
 use eframe::egui::Color32;
-use std::mem;
-use std::sync::{LazyLock, Mutex};
 
 pub static TILE_HIDDEN: Color32 = Color32::from_gray(160);
 pub static TILE_REVEALED: Color32 = Color32::from_gray(220);

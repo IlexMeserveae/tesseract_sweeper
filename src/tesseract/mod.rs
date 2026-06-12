@@ -2,7 +2,7 @@ use crate::minesweeper::coordinate::Coordinate;
 use crate::minesweeper::Minefield;
 use crate::tesseract::fonts::{reload_active_fonts, MONOSPACE_FONT, PROPORTIONAL_FONT, TITLE_FONT};
 use crate::tesseract::AppPhase::*;
-use eframe::egui::{Color32, Context, Key, Margin, RichText, ScrollArea};
+use eframe::egui::{Color32, Context, Key, RichText};
 use eframe::{egui, App, CreationContext, Frame};
 use std::cmp::{min, PartialEq};
 use std::ops::AddAssign;
@@ -109,7 +109,7 @@ mod top_bar {
         pub(super) fn show_top_bar(&mut self, ctx: &Context) {
             egui::TopBottomPanel::top("Top Panel")
                 .show(ctx, |ui| {
-                    egui::containers::menu::MenuBar::new().ui(ui, |ui| {
+                    menu::MenuBar::new().ui(ui, |ui| {
                         self.show_top_bar_buttons(ui)
                     })
                 });
@@ -130,14 +130,14 @@ mod top_bar {
                         let button = Button::new(RichText::new("Disable").size(14.));
                         if ui.add(button).clicked() {
                             self.dev_mode = false;
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                     else {
                         let button = Button::new(RichText::new("Enable").size(14.));
                         if ui.add(button).clicked() {
                             self.dev_mode = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 });
@@ -196,18 +196,18 @@ mod dev_panel {
     }
 }
 mod minefield {
-    use crate::tesseract::minefield::Ordinate::X;
-use super::icons::icon;
+    use super::icons::icon;
     use super::icons::Icon::{IncorrectFlag, Mine, RedFlag};
     use super::AppPhase::*;
     use super::{colors, hidden_background, minecount_text, revealed_background, MouseTool, TesseractApp};
+    use crate::minesweeper::coordinate::Ordinate::Y;
     use crate::minesweeper::coordinate::{Coordinate, Ordinate};
     use crate::minesweeper::tile::TileError;
     use crate::minesweeper::{coordinate, QueryResult};
-    use eframe::{egui, emath};
-    use eframe::egui::{pos2, vec2, Button, Color32, Image, Margin, PointerButton, Rect, Response, RichText, ScrollArea, Sense, Stroke, Ui};
+    use crate::tesseract::minefield::Ordinate::X;
+    use eframe::egui::{pos2, vec2, Button, Color32, Image, Margin, PointerButton, Rect, Response, RichText, ScrollArea, Stroke, Ui};
+    use eframe::egui;
     use TileType::*;
-    use crate::minesweeper::coordinate::Ordinate::Y;
 
     enum TileType {
         TextTile(RichText, Color32),
@@ -436,15 +436,14 @@ impl App for TesseractApp {
 
 mod update {
     use super::*;
+    use crate::minesweeper::coordinate::Ordinate::*;
     use crate::minesweeper::coordinate::{coordinate, ORDINATES};
     use crate::tesseract::fonts::{get_scale, title_family};
     use crate::{FieldSettings, Preset};
     use eframe::egui::Align::Center;
-    use eframe::egui::{vec2, Align, AtomExt, Button, FontId, Key, Label, Layout, Response, Ui, ViewportCommand};
+    use eframe::egui::{vec2, Align, AtomExt, Button, FontId, Key, Label, Layout, Ui, ViewportCommand};
     use std::mem;
-    use std::process::Command;
     use Align::Min;
-    use crate::minesweeper::coordinate::Ordinate::*;
 
     pub(super) enum UpdateError {}
     type UpdateResult = Result<(), UpdateError>;

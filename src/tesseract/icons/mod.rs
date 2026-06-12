@@ -1,5 +1,4 @@
 use eframe::egui::{include_image, Image, ImageSource};
-use std::collections::HashMap;
 use std::mem;
 use std::sync::Mutex;
 

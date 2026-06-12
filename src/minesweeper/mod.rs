@@ -1,13 +1,12 @@
+use crate::minesweeper::coordinate::ORDINATES;
+use crate::minesweeper::tile::{TileError, TileResult};
+use crate::FieldSettings;
+use coordinate::{Coordinate, Ordinate};
+use rand::random;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::ops::Range;
-use eframe::egui::util::undoer::Settings;
-use rand::random;
-use coordinate::{Coordinate, Ordinate};
 use tile::Tile;
-use crate::FieldSettings;
-use crate::minesweeper::coordinate::ORDINATES;
-use crate::minesweeper::tile::{TileError, TileResult};
 
 #[cfg(test)]
 mod tests;
