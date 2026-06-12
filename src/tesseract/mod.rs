@@ -44,6 +44,7 @@ pub struct TesseractApp {
     dev_mode: bool,
     inspected_tile: Option<Coordinate>,
 
+    // Custom Play Menu
     pick_ord_sizes: [f32; 4],
     pick_mine_count: f32,
     
@@ -78,7 +79,7 @@ impl TesseractApp {
             inspected_tile: None,
 
             pick_ord_sizes: [4.; 4],
-            pick_mine_count: 20.,
+            pick_mine_count: 12.,
         }
     }
 
@@ -197,16 +198,18 @@ mod dev_panel {
     }
 }
 mod minefield {
-    use super::icons::icon;
+    use crate::tesseract::minefield::Ordinate::X;
+use super::icons::icon;
     use super::icons::Icon::{IncorrectFlag, Mine, RedFlag};
     use super::AppPhase::*;
     use super::{colors, hidden_background, minecount_text, revealed_background, MouseTool, TesseractApp};
     use crate::minesweeper::coordinate::{Coordinate, Ordinate};
     use crate::minesweeper::tile::TileError;
     use crate::minesweeper::{coordinate, QueryResult};
-    use eframe::egui;
-    use eframe::egui::{Button, Color32, Image, Margin, PointerButton, Response, RichText, ScrollArea, Stroke, Ui};
+    use eframe::{egui, emath};
+    use eframe::egui::{pos2, vec2, Button, Color32, Image, Margin, PointerButton, Rect, Response, RichText, ScrollArea, Sense, Stroke, Ui};
     use TileType::*;
+    use crate::minesweeper::coordinate::Ordinate::Y;
 
     enum TileType {
         TextTile(RichText, Color32),
@@ -214,32 +217,76 @@ mod minefield {
     }
 
     impl TesseractApp {
+        pub(super) const OUTER_MARGIN: i8 = 10;
+        pub(super) const INNER_MARGIN: i8 = 10;
         pub fn display_scroller(&mut self, ui: &mut Ui) {
-            let margin = Margin::symmetric(16, 16);
+            let margin = Margin::symmetric(Self::OUTER_MARGIN, Self::OUTER_MARGIN);
             egui::Frame::new().inner_margin(margin).show(ui, |ui| {
-                ScrollArea::both().show(ui, |ui| {
-                    self.display_minefield(ui);
+
+                let scroll_area = ScrollArea::both().id_salt("Minefield Scroller");
+                scroll_area.show_viewport(ui, |ui, rect| {
+
+                    let margin = Margin::symmetric(Self::INNER_MARGIN, Self::INNER_MARGIN);
+                    let visible = Rect::from_min_size(
+                        pos2(0., 0.), rect.size() + vec2(20., 45.)
+                        // - vec2(50., 50.)
+                    );
+
+                    egui::Frame::new().outer_margin(margin).show(ui, |ui| {
+                        self.display_minefield(ui, visible);
+                    });
                 });
             });
         }
-        pub fn display_minefield(&mut self, ui: &mut Ui) {
+        pub fn display_minefield(&mut self, ui: &mut Ui, visible_rect: Rect) {
+            let mf = self.minefield.as_ref().unwrap();
+            let sub_height = self.settings.little_gap_size().y * (mf.length(Y) - 1) as f32 +
+                mf.length(Y) as f32 * (self.settings.tile_size().y);
+            let sub_width = self.settings.little_gap_size().x * (mf.length(X) - 1) as f32 +
+                mf.length(X) as f32 * (self.settings.tile_size().x);
+
+            let sub_size = vec2(sub_width, sub_height);
             let spacing = self.settings.big_gap_size();
             egui::Grid::new("minefield").spacing(spacing).show(ui, |ui| {
                 for w in 1..=self.minefield.as_ref().unwrap().length(Ordinate::W) {
                     for z in 1..=self.minefield.as_ref().unwrap().length(Ordinate::Z) {
-                        self.display_subfield(ui, w, z);
+
+                        // Check if visible
+                        let cursor = ui.cursor().min;
+                        let sub_rect = Rect::from_min_size(cursor, sub_size);
+                        if !visible_rect.intersects(sub_rect) {
+                            // ui.painter().rect_filled(sub_rect, 2.0, Color32::GOLD);
+                            ui.advance_cursor_after_rect(sub_rect);
+                            continue;
+                        }
+
+                        let vis =
+                            if visible_rect.contains_rect(sub_rect) { None }
+                            else { Some(visible_rect) };
+                        self.display_subfield(ui, w, z, vis);
                     }
                     ui.end_row();
                 }
             });
         }
-        fn display_subfield(&mut self, ui: &mut Ui, w: usize, z: usize) {
+        fn display_subfield(&mut self, ui: &mut Ui, w: usize, z: usize, visible_rect: Option<Rect>) {
             let spacing = self.settings.little_gap_size();
             egui::Grid::new(format!("subfield-{z}-{w}")).spacing(spacing)
                 .show(ui, |ui| {
                     for y in 1..=self.minefield.as_ref().unwrap().length(Ordinate::Y) {
                         for x in 1..=self.minefield.as_ref().unwrap().length(Ordinate::X) {
                             let coord = coordinate::coordinate(x, y, z, w);
+
+                            if let Some(visible_rect) = visible_rect {
+                                let cursor = ui.cursor().min;
+                                let sub_rect = Rect::from_min_size(cursor, self.settings.tile_size());
+                                if !visible_rect.intersects(sub_rect) {
+                                    // ui.painter().rect_filled(sub_rect, 2.0, Color32::GOLD);
+                                    ui.advance_cursor_after_rect(sub_rect);
+                                    continue;
+                                }
+                            }
+
                             self.display_tile(ui, coord);
                         }
                         ui.end_row();
@@ -404,10 +451,13 @@ mod update {
     type UpdateResult = Result<(), UpdateError>;
 
     impl TesseractApp {
-        fn previous_menu_if_escaped(&mut self, ctx: &Context, prev_phase: AppPhase) {
+        fn previous_menu_if_escaped(&mut self, ctx: &Context, prev_phase: AppPhase) -> bool {
             if any_pressed(ctx, vec![Key::Escape]) {
                 self.next_phase = Some(prev_phase);
+                true;
             }
+
+            false
         }
 
         pub(super) fn update_main_menu(&mut self, ctx: &Context) -> UpdateResult {
@@ -419,7 +469,7 @@ mod update {
                     ui.add_space( height * 0.25);
 
                     let title = Label::new(RichText::new("Tesseract")
-                        .font(FontId::new(120., title_family())));
+                        .font(FontId::new(100., title_family())));
                     ui.add(title);
 
                     ui.add_space(height * 0.10);
@@ -574,7 +624,7 @@ mod update {
             if self.dev_mode { self.show_dev_panel(ctx) }
 
             let mf = self.minefield.as_ref().unwrap();
-            let width = 16. +
+            let width = (2 * Self::OUTER_MARGIN + 2 * Self::INNER_MARGIN) as f32 +
                 self.settings.big_gap_size().x * (mf.length(Z) - 1) as f32 +
                 mf.length(Z) as f32 * (
                     self.settings.little_gap_size().x * (mf.length(X) - 1) as f32 +
@@ -582,7 +632,7 @@ mod update {
                         self.settings.tile_size().x
                     )
                 );
-            let height = 16. +
+            let height = (2 * Self::OUTER_MARGIN + 2 * Self::INNER_MARGIN) as f32 +
                 self.settings.big_gap_size().y * (mf.length(W) - 1) as f32 +
                 mf.length(W) as f32 * (
                     self.settings.little_gap_size().y * (mf.length(Y) - 1) as f32 +
@@ -597,18 +647,22 @@ mod update {
                 let layout = Layout::left_to_right(Min);
                 ui.allocate_ui_with_layout(size, layout, |ui| {
                     ui.spacing_mut().item_spacing = vec2(0., 0.);
-                    let gap = ui.available_width() - width;
+                    let gap = f32::max(0., ui.available_width() - width);
                     ui.add_space(gap * 0.5);
 
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing = vec2(0., 0.);
-                        let gap = ui.available_height() - height;
+                        let gap = f32::max(0., ui.available_height() - height);
                         ui.add_space(gap * 0.5);
 
                         self.display_scroller(ui)
                     });
                 })
             });
+
+            if self.previous_menu_if_escaped(ctx, AppPhase::MainMenu) {
+
+            }
 
             Ok(())
         }

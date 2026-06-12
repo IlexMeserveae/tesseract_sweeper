@@ -10,7 +10,7 @@ fn main() {
     let options = NativeOptions {
         viewport: ViewportBuilder::default()
             .with_resizable(true)
-            .with_inner_size([1050., 1050.])
+            .with_inner_size([1024., 1024.])
             .with_maximized(true),
         ..Default::default()
     };
@@ -50,9 +50,9 @@ impl Presets {
             Presets::Small3D => 8,
             Presets::Medium3D => 32,
             Presets::Large3D => 128,
-            Presets::Small4D => 10,
-            Presets::Medium4D => 20,
-            Presets::Large4D => 40,
+            Presets::Small4D => 12,
+            Presets::Medium4D => 24,
+            Presets::Large4D => 48,
         };
 
         Minefield::new(size, mines).unwrap()
