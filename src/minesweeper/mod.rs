@@ -16,8 +16,8 @@ pub mod tile;
 
 pub struct Minefield {
     size: Coordinate, tiles: Vec<Tile>, 
-    total_mines: i16, flagged_mines: i16, blanks_remaining: i16, 
-    delta: bool
+    minecount: i16, flagged_tiles: i16, unrevealed_tiles: i16, 
+    delta: bool, cheated: bool
 }
 impl Minefield {
     fn neighbour_no(field_size: Coordinate, index: usize) -> u16 {
@@ -50,8 +50,8 @@ impl Minefield {
         let tiles = tiles.into_iter().enumerate().map(|(i, mine)|
             Tile::new(mine, Self::neighbour_no(size, i))).collect();
 
-        let mut field = Self { size, tiles, total_mines: mine_count as i16, 
-            flagged_mines: 0, blanks_remaining: size.multiply_out() as i16, delta: true };
+        let mut field = Self { cheated: false, size, tiles, minecount: mine_count as i16, 
+            flagged_tiles: 0, unrevealed_tiles: size.multiply_out() as i16, delta: true };
 
         for index in mine_positions {
             let coord = Self::convert_index(size, index);
@@ -116,6 +116,8 @@ impl Minefield {
         &mut self.tiles[index]
     }
 
+    pub fn cheat(&mut self) { self.cheated = true; }
+    pub fn has_cheated(&self) -> bool { self.cheated }
     pub fn toggle_delta(&mut self) { self.delta = !self.delta; }
     pub fn toggle_flagged(&mut self, coord: Coordinate) -> bool {
         let tile = self.index_mut(coord);
@@ -126,7 +128,7 @@ impl Minefield {
             if flagged { self.index_mut(neighbour).increase_flagged_minecount() }
             else { self.index_mut(neighbour).decrease_flagged_minecount() }.unwrap()
         };
-        self.flagged_mines += if flagged { 1 } else { -1 };
+        self.flagged_tiles += if flagged { 1 } else { -1 };
         flagged
     }
 
@@ -136,6 +138,7 @@ impl Minefield {
         let mut stack = vec![coord];
         while let Some(coord) = stack.pop() {
             revealed += 1;
+            self.unrevealed_tiles -= 1;
             self.index_mut(coord).reveal()?;
 
             let is_zero = QR::Revealed(0) == self.query_tile(coord);
@@ -187,9 +190,9 @@ impl Minefield {
     }
 
     pub fn delta(&self) -> bool { self.delta }
-    pub fn mines_remaining(&self) -> i16 { self.total_mines - self.flagged_mines }
+    pub fn mines_remaining(&self) -> i16 { self.minecount - self.flagged_tiles }
     pub fn length(&self, ordinate: Ordinate) -> usize { self.size.get(ordinate) }
-    pub fn game_won(&self) -> bool { self.total_mines == self.blanks_remaining }
+    pub fn game_won(&self) -> bool { self.minecount == self.unrevealed_tiles }
     pub fn query_tile(&self, coord: Coordinate) -> QueryResult {
         let tile = self.index(coord);
         let count = tile.minecount(self.delta);

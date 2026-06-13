@@ -71,9 +71,9 @@ impl Preset {
             // Preset::Small3D => 8,
             // Preset::Medium3D => 32,
             // Preset::Large3D => 128,
-            Preset::Small4D => 10,
+            Preset::Small4D => 8,
             Preset::Medium4D => 40,
-            Preset::Large4D => 320,
+            Preset::Large4D => 400,
         };
 
         let settings = FieldSettings::new(size, mines).unwrap();

@@ -19,6 +19,7 @@ enum AppPhase {
     MainMenu,
     SizeMenu,
     GameRunning,
+    GamePaused,
     GameLost,
     GameWon,
 }
@@ -47,7 +48,6 @@ pub struct TesseractApp {
     // Custom Play Menu
     pick_ord_sizes: [f32; 4],
     pick_mine_count: f32,
-    
 }
 
 impl TesseractApp {
@@ -82,15 +82,27 @@ impl TesseractApp {
     }
 
     pub fn set_minefield(&mut self, minefield: Minefield) {
+        self.dev_mode = minefield.has_cheated();
         self.minefield = minefield.into();
-        self.next_phase = GameRunning.into();
+        self.force_change_phase(GameRunning);
     }
     pub fn clear_minefield(&mut self) {
         self.minefield = None;
-        self.next_phase = MainMenu.into();
+        self.force_change_phase(MainMenu);
     }
+    fn try_change_phase(&mut self, phase: AppPhase) -> bool {
+        if self.next_phase.is_none() {
+            self.next_phase = Some(phase);
+            return true;
+        }
+
+        false
+    }
+    fn force_change_phase(&mut self, phase: AppPhase) { self.next_phase = Some(phase); }
+
     fn enable_dev_mode(&mut self) {
         self.dev_mode = true;
+        self.minefield.as_mut().unwrap().cheat();
     }
     fn disable_dev_mode(&mut self) {
         self.dev_mode = false;
@@ -103,11 +115,13 @@ mod top_bar {
     use crate::tesseract::TesseractApp;
     use eframe::egui;
     use eframe::egui::containers::menu;
-    use eframe::egui::{Button, Context, RichText, Ui};
+    use eframe::egui::{Button, Context, Margin, RichText, Style, Ui};
 
     impl TesseractApp {
         pub(super) fn show_top_bar(&mut self, ctx: &Context) {
-            egui::TopBottomPanel::top("Top Panel")
+            let margin = Margin { left: 8, right: 8, top: 10, bottom: 8 };
+            let frame = egui::Frame::side_top_panel(&Style::default()).inner_margin(margin);
+            egui::TopBottomPanel::top("Top Panel").frame(frame)
                 .show(ctx, |ui| {
                     menu::MenuBar::new().ui(ui, |ui| {
                         self.show_top_bar_buttons(ui)
@@ -119,24 +133,33 @@ mod top_bar {
 
             ui.add(egui::Separator::default().spacing(20.));
 
-            let msg = if self.dev_mode { "Dev Mode Enabled" }
-            else { "Dev Mode Disabled" };
-            ui.label(msg);
+            let msg1 = if self.dev_mode { "Cheats: Enabled " }
+            else { "Cheats: Disabled" };
+            ui.label(msg1);
+
+            ui.add_space(20.);
+
+
+            let msg2 = if self.minefield.as_ref()
+                .unwrap().has_cheated() { "Has Cheated: True " }
+            else { "Has Cheated: False" };
+            ui.label(msg2);
+
         }
         fn show_dev_mode_button(&mut self, ui: &mut Ui) {
-            menu::MenuButton::new(RichText::new("Dev Mode").size(16.))
+            menu::MenuButton::new(RichText::new("Cheat Mode").size(16.))
                 .ui(ui, |ui| {
                     if self.dev_mode {
                         let button = Button::new(RichText::new("Disable").size(14.));
                         if ui.add(button).clicked() {
-                            self.dev_mode = false;
+                            self.disable_dev_mode();
                             ui.close();
                         }
                     }
                     else {
-                        let button = Button::new(RichText::new("Enable").size(14.));
+                        let button = Button::new(RichText::new("Enable ").size(14.));
                         if ui.add(button).clicked() {
-                            self.dev_mode = true;
+                            self.enable_dev_mode();
                             ui.close();
                         }
                     }
@@ -148,12 +171,15 @@ mod dev_panel {
     use crate::tesseract::{MouseTool, TesseractApp};
     use eframe::egui;
     use eframe::egui::{Button, Context, RichText, Ui};
+    use crate::tesseract::AppPhase::{GameLost, GameWon};
 
     impl TesseractApp {
         pub(super) fn show_dev_panel(&mut self, ctx: &Context) {
             egui::SidePanel::right("Side Panel").show(ctx, |ui| {
                 ui.vertical(|ui| {
                     self.show_inspect(ui);
+                    ui.add_space(20.);
+                    self.show_control(ui);
                 });
             });
         }
@@ -192,6 +218,17 @@ mod dev_panel {
                     );
                 });
             }
+        }
+
+        fn show_control(&mut self, ui: &mut Ui) {
+            ui.horizontal(|ui| {
+                if ui.add(Button::new(RichText::new("Win Game"))).clicked() {
+                    self.force_change_phase(GameWon);
+                }
+               if ui.add(Button::new(RichText::new("Lose Game"))).clicked() {
+                   self.force_change_phase(GameLost);
+               }
+            });
         }
     }
 }
@@ -277,10 +314,10 @@ mod minefield {
 
                             if let Some(visible_rect) = visible_rect {
                                 let cursor = ui.cursor().min;
-                                let sub_rect = Rect::from_min_size(cursor, self.settings.tile_size());
-                                if !visible_rect.intersects(sub_rect) {
-                                    // ui.painter().rect_filled(sub_rect, 2.0, Color32::GOLD);
-                                    ui.advance_cursor_after_rect(sub_rect);
+                                let tile_rect = Rect::from_min_size(cursor, self.settings.tile_size());
+                                if !visible_rect.intersects(tile_rect) {
+                                    // ui.painter().rect_filled(tile_rect, 2.0, Color32::GOLD);
+                                    ui.advance_cursor_after_rect(tile_rect);
                                     continue;
                                 }
                             }
@@ -294,13 +331,17 @@ mod minefield {
         fn display_tile(&mut self, ui: &mut Ui, coord: Coordinate) {
             let field = self.minefield.as_mut().unwrap();
             let size = self.settings.tile_size();
-            let highlighted = self.highlighted_tiles.contains(&coord);
-            let inspected = self.inspected_tile == Some(coord);
 
             let query = match self.current_phase {
-                GameRunning => field.query_tile(coord),
+                GameRunning | GameWon => field.query_tile(coord),
                 GameLost => field.query_tile_gameover(coord),
-                _ => unreachable!(),
+                GamePaused => {
+                    // Blanks out tile
+                    let button = Button::new("").fill(colors::TILE_HIDDEN);
+                    ui.add(button.min_size(size));
+                    return;
+                },
+                _ => unreachable!()
             };
             let tile = match query {
                 QueryResult::Blank => {
@@ -339,6 +380,7 @@ mod minefield {
                 },
             };
 
+            let highlighted = self.highlighted_tiles.contains(&coord);
             let mut button = match tile {
                 TextTile(text, mut color) => {
                     if highlighted { color = color.gamma_multiply(0.8) }
@@ -350,7 +392,9 @@ mod minefield {
                 }
             };
 
+            let inspected = self.inspected_tile == Some(coord);
             if inspected { button = button.stroke(Stroke::new(4., Color32::DARK_BLUE)); }
+
             let button= ui.add(button.min_size(size));
 
             // Behaviour
@@ -361,18 +405,13 @@ mod minefield {
                     },
                 };
             }
-            else { self.normal_tile_behavior(coord, &button); }
+            else { self.normal_tile_behavior(coord, &button, query); }
 
             if button.hovered() { self.hovered_tile = Some(coord); }
         }
 
-        fn normal_tile_behavior(&mut self, coord: Coordinate, button: &Response) {
+        fn normal_tile_behavior(&mut self, coord: Coordinate, button: &Response, query: QueryResult) {
             let field = self.minefield.as_mut().unwrap();
-            let query = match self.current_phase {
-                GameRunning => field.query_tile(coord),
-                GameLost => field.query_tile_gameover(coord),
-                _ => unreachable!(),
-            };
 
             match query {
                 QueryResult::Blank => {}
@@ -413,24 +452,12 @@ impl App for TesseractApp {
         }
 
         if self.current_phase == GameRunning && self.minefield.as_ref().unwrap().game_won() {
-            self.current_phase = GameWon;
+            self.force_change_phase(GameWon);
         }
 
         self.highlighted_tiles.clear();
 
-        let _ = match self.current_phase {
-            MainMenu => self.update_main_menu(ctx),
-            SizeMenu => self.update_size_menu(ctx),
-            GameRunning => {
-                if let Some(coord) = self.hovered_tile.take() {
-                    self.highlighted_tiles = self.minefield.as_ref().unwrap()
-                        .get_neighbours(coord, 1);
-                }
-
-                self.update_game(ctx)
-            }
-            GameWon | GameLost => self.update_game(ctx),
-        };
+        self.match_update(ctx);
     }
 }
 
@@ -441,7 +468,7 @@ mod update {
     use crate::tesseract::fonts::{get_scale, title_family};
     use crate::{FieldSettings, Preset};
     use eframe::egui::Align::Center;
-    use eframe::egui::{vec2, Align, AtomExt, Button, FontId, Key, Label, Layout, Ui, ViewportCommand};
+    use eframe::egui::{vec2, Align, Area, AtomExt, Button, FontId, Id, Key, Label, Layout, Margin, Modal, Style, Ui, ViewportCommand};
     use std::mem;
     use Align::Min;
 
@@ -450,6 +477,17 @@ mod update {
 
 
     impl TesseractApp {
+
+        pub fn match_update(&mut self, ctx: &Context) {
+            let _ = match self.current_phase {
+                MainMenu => self.update_main_menu(ctx),
+                SizeMenu => self.update_size_menu(ctx),
+                GameRunning => self.update_game_running(ctx),
+                GamePaused => self.update_game_paused(ctx),
+                GameWon => self.update_game_won(ctx),
+                GameLost => self.update_game_lost(ctx),
+            };
+        }
 
         fn play_button(&mut self, ui: &mut Ui, text: &str, preset: Preset) {
             let play = Button::new(RichText::new(text).size(30.))
@@ -461,16 +499,9 @@ mod update {
             };
         }
 
-        fn previous_menu_if_escaped(&mut self, ctx: &Context, prev_phase: AppPhase) -> bool {
-            if any_pressed(ctx, vec![Key::Escape]) {
-                self.next_phase = Some(prev_phase);
-                true;
-            }
+        fn user_escaped(ctx: &Context) -> bool { any_pressed(ctx, vec![Key::Escape]) }
 
-            false
-        }
-
-        pub(super) fn update_main_menu(&mut self, ctx: &Context) -> UpdateResult {
+        fn update_main_menu(&mut self, ctx: &Context) -> UpdateResult {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let layout = Layout::top_down(Center);
                 ui.with_layout(layout, |ui| {
@@ -496,7 +527,7 @@ mod update {
                     let play_custom = Button::new(RichText::new(" Play Custom ")
                         .size(30.)).fill(Color32::from_gray(28));
                     if ui.add(play_custom).clicked() {
-                        self.next_phase = Some(SizeMenu)
+                        self.try_change_phase(SizeMenu);
                     }
                     ui.add_space(height * 0.02);
 
@@ -512,7 +543,7 @@ mod update {
             Ok(())
         }
 
-        pub(super) fn update_size_menu(&mut self, ctx: &Context) -> UpdateResult {
+        fn update_size_menu(&mut self, ctx: &Context) -> UpdateResult {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let layout = Layout::top_down(Center);
                 ui.with_layout(layout, |ui| {
@@ -562,7 +593,7 @@ mod update {
                 })
             });
 
-            self.previous_menu_if_escaped(ctx, MainMenu);
+            if Self::user_escaped(ctx) { self.try_change_phase(MainMenu); }
 
             Ok(())
         }
@@ -639,11 +670,90 @@ mod update {
                             2, &mut self.pick_ord_sizes[index]);
         }
 
-        pub(super) fn update_game(&mut self, ctx: &Context) -> UpdateResult {
+        fn update_game_won(&mut self, ctx: &Context) -> UpdateResult {
             self.show_top_bar(ctx);
+            self.update_central(ctx)?;
 
+            // TODO
+            let margin = Margin::symmetric(25, 25);
+            Modal::new(Id::new("Game Won Modal"))
+                .frame(egui::Frame::popup(&Style::default()).inner_margin(margin))
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+
+                        ui.label(RichText::new("You Won!").size(40.));
+                        ui.add_space(20.);
+                        ui.label(RichText::new("Press <Esc> to exit").size(18.));
+                    });
+                });
+
+            if Self::user_escaped(ctx) { self.try_change_phase(MainMenu); }
+
+            Ok(())
+        }
+
+        fn update_game_lost(&mut self, ctx: &Context) -> UpdateResult {
+            self.show_top_bar(ctx);
+            self.update_central(ctx)?;
+
+            // TODO
+            let margin = Margin::symmetric(25, 25);
+            Modal::new(Id::new("Game Lost Modal"))
+                .frame(egui::Frame::popup(&Style::default()).inner_margin(margin))
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+
+                        ui.label(RichText::new("You Blew Up!").size(40.));
+                        ui.add_space(20.);
+                        ui.label(RichText::new("Press <Esc> to exit").size(18.));
+                    });
+                });
+
+            if Self::user_escaped(ctx) { self.try_change_phase(MainMenu); }
+
+            Ok(())
+        }
+
+        fn update_game_running(&mut self, ctx: &Context) -> UpdateResult {
+            if let Some(coord) = self.hovered_tile.take() {
+                self.highlighted_tiles = self.minefield.as_ref().unwrap()
+                    .get_neighbours(coord, 1);
+            }
+
+            self.show_top_bar(ctx);
             if self.dev_mode { self.show_dev_panel(ctx) }
+            self.update_central(ctx)?;
 
+            if Self::user_escaped(ctx) { self.try_change_phase(GamePaused); }
+
+            Ok(())
+        }
+
+        fn update_game_paused(&mut self, ctx: &Context) -> UpdateResult {
+            self.show_top_bar(ctx);
+            if self.dev_mode { self.show_dev_panel(ctx) }
+            self.update_central(ctx)?;
+
+            // TODO
+            let margin = Margin::symmetric(25, 25);
+            Modal::new(Id::new("Game Paused Modal"))
+                .frame(egui::Frame::popup(&Style::default()).inner_margin(margin))
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+
+                        ui.label(RichText::new("Game Paused").size(40.));
+                        ui.add_space(20.);
+                        ui.label(RichText::new("Press <Esc> to resume").size(18.));
+                    });
+                });
+            if Self::user_escaped(ctx) { self.try_change_phase(GameRunning); }
+
+            Ok(())
+        }
+
+
+
+        fn update_central(&mut self, ctx: &Context) -> UpdateResult {
             let mf = self.minefield.as_ref().unwrap();
             let width = (2 * Self::OUTER_MARGIN + 2 * Self::INNER_MARGIN) as f32 +
                 self.settings.big_gap_size().x * (mf.length(Z) - 1) as f32 +
@@ -680,10 +790,6 @@ mod update {
                     });
                 })
             });
-
-            if self.previous_menu_if_escaped(ctx, AppPhase::MainMenu) {
-                // TODO: Continue Last Game
-            }
 
             Ok(())
         }
