@@ -488,7 +488,7 @@ mod update {
                 GameLost => self.update_game_lost(ctx),
             };
         }
-
+        
         fn play_button(&mut self, ui: &mut Ui, text: &str, preset: Preset) {
             let play = Button::new(RichText::new(text).size(30.))
                 .fill(Color32::from_gray(28));
@@ -577,7 +577,7 @@ mod update {
                     if ui.add(play_button).clicked() {
                         let ords = &self.pick_ord_sizes;
                         let coord = coordinate(ords[0] as usize, ords[1] as usize, ords[2] as usize, ords[3] as usize);
-                        let mines = self.pick_mine_count as u16;
+                        let mines = self.pick_mine_count as u32;
                         let settings = FieldSettings::new(coord, mines);
                         if settings.is_err() {
                             // TODO
@@ -683,7 +683,19 @@ mod update {
 
                         ui.label(RichText::new("You Won!").size(40.));
                         ui.add_space(20.);
+
+                        let retry_button = Button::new(RichText::new("Play Again")
+                            .size(18.)).fill(Color32::DARK_GRAY);
+                        if ui.add(retry_button).clicked() {
+                            let settings = self.minefield.as_ref().unwrap().settings();
+                            let mut mf = Minefield::new(settings);
+                            mf.quickstart().unwrap();
+                            self.set_minefield(mf);
+                        }
+                        ui.add_space(10.);
+
                         ui.label(RichText::new("Press <Esc> to exit").size(18.));
+                        
                     });
                 });
 
@@ -705,6 +717,17 @@ mod update {
 
                         ui.label(RichText::new("You Blew Up!").size(40.));
                         ui.add_space(20.);
+
+                        let retry_button = Button::new(RichText::new("Play Again")
+                            .size(18.)).fill(Color32::DARK_GRAY);
+                        if ui.add(retry_button).clicked() {
+                            let settings = self.minefield.as_ref().unwrap().settings();
+                            let mut mf = Minefield::new(settings);
+                            mf.quickstart().unwrap();
+                            self.set_minefield(mf);
+                        }
+                        ui.add_space(10.);
+
                         ui.label(RichText::new("Press <Esc> to exit").size(18.));
                     });
                 });

@@ -16,7 +16,7 @@ pub mod tile;
 
 pub struct Minefield {
     size: Coordinate, tiles: Vec<Tile>, 
-    minecount: i16, flagged_tiles: i16, unrevealed_tiles: i16, 
+    minecount: u32, flagged_tiles: u32, unrevealed_tiles: u32,
     delta: bool, cheated: bool
 }
 impl Minefield {
@@ -34,7 +34,7 @@ impl Minefield {
 
     pub fn new(settings: FieldSettings) -> Self {
         let size = settings.size;
-        let mine_count = settings.mine_count;
+        let mine_count = settings.minecount as u32;
         
         let mut tiles = vec![false; size.x() * size.y() * size.z() * size.w()];
 
@@ -50,8 +50,8 @@ impl Minefield {
         let tiles = tiles.into_iter().enumerate().map(|(i, mine)|
             Tile::new(mine, Self::neighbour_no(size, i))).collect();
 
-        let mut field = Self { cheated: false, size, tiles, minecount: mine_count as i16, 
-            flagged_tiles: 0, unrevealed_tiles: size.multiply_out() as i16, delta: true };
+        let mut field = Self { cheated: false, size, tiles, minecount: mine_count,
+            flagged_tiles: 0, unrevealed_tiles: size.multiply_out() as u32, delta: true };
 
         for index in mine_positions {
             let coord = Self::convert_index(size, index);
@@ -128,7 +128,7 @@ impl Minefield {
             if flagged { self.index_mut(neighbour).increase_flagged_minecount() }
             else { self.index_mut(neighbour).decrease_flagged_minecount() }.unwrap()
         };
-        self.flagged_tiles += if flagged { 1 } else { -1 };
+        if flagged { self.flagged_tiles += 1 } else { self.flagged_tiles -= 1 }
         flagged
     }
 
@@ -190,9 +190,10 @@ impl Minefield {
     }
 
     pub fn delta(&self) -> bool { self.delta }
-    pub fn mines_remaining(&self) -> i16 { self.minecount - self.flagged_tiles }
+    pub fn mines_remaining(&self) -> i32 { self.minecount as i32 - self.flagged_tiles as i32 }
+    pub fn settings(&self) -> FieldSettings { FieldSettings { size: self.size, minecount: self.minecount } }
     pub fn length(&self, ordinate: Ordinate) -> usize { self.size.get(ordinate) }
-    pub fn game_won(&self) -> bool { self.minecount == self.unrevealed_tiles }
+    pub fn game_won(&self) -> bool { self.minecount as u32 == self.unrevealed_tiles }
     pub fn query_tile(&self, coord: Coordinate) -> QueryResult {
         let tile = self.index(coord);
         let count = tile.minecount(self.delta);

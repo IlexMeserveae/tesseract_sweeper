@@ -27,16 +27,16 @@ fn main() {
 
 pub struct FieldSettings {
     size: Coordinate,
-    mine_count: u16,
+    minecount: u32,
 }
 
 impl FieldSettings {
-    pub fn new(size: Coordinate, mine_count: u16) -> Result<Self, String> {
+    pub fn new(size: Coordinate, mine_count: u32) -> Result<Self, String> {
         if 4 * mine_count as usize > size.multiply_out() {
             return Err("Too many mines for this size of grid.".to_string())
         }
 
-        Ok(FieldSettings { size, mine_count })
+        Ok(FieldSettings { size, minecount: mine_count })
     }
 }
 
