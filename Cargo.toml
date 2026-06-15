@@ -3,8 +3,16 @@ name = "tesseract_sweeper"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+web_assembly = []
+
+
 [dependencies]
 eframe = "0.33.3"
 egui_extras = { version = "0.33.3", features = ["all_loaders"] }
 image = { version = "0.25.10", features = ["png"]}
+
+rkyv = "0.8.16"
+
 rand = "0.10.1"

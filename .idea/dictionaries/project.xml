@@ -3,6 +3,7 @@
     <words>
       <w>gameover</w>
       <w>minecount</w>
+      <w>wasm</w>
     </words>
   </dictionary>
 </component>

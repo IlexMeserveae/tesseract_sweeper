@@ -8,17 +8,41 @@ use std::collections::VecDeque;
 use std::ops::Range;
 use tile::Tile;
 
+use rkyv::{Archive, Deserialize, Serialize};
+
 #[cfg(test)]
 mod tests;
-
 pub mod coordinate;
 pub mod tile;
 
+#[derive(Archive, Serialize, Hash)]
 pub struct Minefield {
     size: Coordinate, tiles: Vec<Tile>, 
     minecount: u32, flagged_tiles: u32, unrevealed_tiles: u32,
-    delta: bool, cheated: bool
+    delta: bool, cheated: bool, started: bool
 }
+
+mod archive {
+    use super::{ArchivedMinefield, Minefield};
+    use rkyv::rancor::{Fallible, Source};
+    use rkyv::Deserialize;
+
+    impl<D: Fallible> Deserialize<Minefield, D> for ArchivedMinefield where <D as Fallible>::Error: Source {
+        fn deserialize(&self, deserializer: &mut D) -> Result<Minefield, D::Error> {
+            Ok( Minefield  {
+                size: self.size.deserialize(deserializer)?,
+                tiles: self.tiles.deserialize(deserializer)?,
+                minecount: self.minecount.deserialize(deserializer)?,
+                flagged_tiles: self.flagged_tiles.deserialize(deserializer)?,
+                unrevealed_tiles: self.unrevealed_tiles.deserialize(deserializer)?,
+                delta: self.delta.deserialize(deserializer)?,
+                cheated: self.cheated.deserialize(deserializer)?,
+                started: self.started.deserialize(deserializer)?,
+            })
+        }
+    }
+}
+
 impl Minefield {
     fn neighbour_no(field_size: Coordinate, index: usize) -> u16 {
         let mut tiles = 81;
@@ -34,7 +58,7 @@ impl Minefield {
 
     pub fn new(settings: FieldSettings) -> Self {
         let size = settings.size;
-        let mine_count = settings.minecount as u32;
+        let mine_count = settings.minecount;
         
         let mut tiles = vec![false; size.x() * size.y() * size.z() * size.w()];
 
@@ -50,8 +74,9 @@ impl Minefield {
         let tiles = tiles.into_iter().enumerate().map(|(i, mine)|
             Tile::new(mine, Self::neighbour_no(size, i))).collect();
 
-        let mut field = Self { cheated: false, size, tiles, minecount: mine_count,
-            flagged_tiles: 0, unrevealed_tiles: size.multiply_out() as u32, delta: true };
+        let mut field = Self { cheated: false, started: false, size, tiles,
+            minecount: mine_count, flagged_tiles: 0,
+            unrevealed_tiles: size.multiply_out() as u32, delta: true };
 
         for index in mine_positions {
             let coord = Self::convert_index(size, index);
@@ -118,6 +143,7 @@ impl Minefield {
 
     pub fn cheat(&mut self) { self.cheated = true; }
     pub fn has_cheated(&self) -> bool { self.cheated }
+    pub fn has_started(&self) -> bool { self.started }
     pub fn toggle_delta(&mut self) { self.delta = !self.delta; }
     pub fn toggle_flagged(&mut self, coord: Coordinate) -> bool {
         let tile = self.index_mut(coord);
@@ -152,6 +178,7 @@ impl Minefield {
             }
         };
 
+        self.started = true;
         Ok(revealed)
     }
     pub fn reveal(&mut self, coord: Coordinate) -> TileResult {

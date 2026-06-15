@@ -52,7 +52,9 @@ enum Preset {
     Large4D,
 }
 impl Preset {
-    pub fn generate(&self) -> Minefield {
+    pub fn generate(&self) -> Minefield { Minefield::new(self.settings()) }
+
+    pub fn settings(&self) -> FieldSettings {
         let size = match self {
             Preset::Small2D => coordinate::coordinate(8, 8, 1, 1),
             Preset::Medium2D => coordinate::coordinate(16, 16, 1, 1),
@@ -76,7 +78,6 @@ impl Preset {
             Preset::Large4D => 400,
         };
 
-        let settings = FieldSettings::new(size, mines).unwrap();
-        Minefield::new(settings)
+        FieldSettings::new(size, mines).unwrap()
     }
 }

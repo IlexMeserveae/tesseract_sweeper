@@ -2,11 +2,14 @@ use crate::minesweeper::coordinate::Coordinate;
 use crate::minesweeper::Minefield;
 use crate::tesseract::fonts::{reload_active_fonts, MONOSPACE_FONT, PROPORTIONAL_FONT, TITLE_FONT};
 use crate::tesseract::SimplePhase::*;
-use eframe::egui::{Color32, Context, Key, RichText};
+use crate::FieldSettings;
+use eframe::egui::{Color32, Context, Key, RichText, ViewportInfo};
 use eframe::{egui, App, CreationContext, Frame};
+use rkyv::rancor::Error as RancorError;
 use std::cmp::{min, PartialEq};
+use std::mem;
 use std::ops::AddAssign;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 use tile_settings::TileSettings;
 
 mod icons;
@@ -14,6 +17,7 @@ mod colors;
 mod fonts;
 mod tile_settings;
 
+#[derive(Debug)]
 enum AppPhase {
     Simple(SimplePhase),
     Transition(TransitionPhase),
@@ -76,17 +80,41 @@ pub struct TesseractApp {
     current_phase: AppPhase,
     next_phase: Option<SimplePhase>,
 
+
+
+    // Game Running
     hovered_tile: Option<Coordinate>,
     highlighted_tiles: Vec<Coordinate>,
 
-    mouse_tool: Option<MouseTool>,
-
     dev_mode: bool,
+
+    mouse_tool: Option<MouseTool>,
     inspected_tile: Option<Coordinate>,
 
+
+
     // Custom Play Menu
-    pick_ord_sizes: [f32; 4],
-    pick_mine_count: f32,
+        pick_ord_sizes: [f32; 4],
+        pick_mine_count: f32,
+}
+
+#[derive(Default)]
+enum SaveLocation {
+    #[default]
+    LastGame,
+    Named(String),
+}
+impl SaveLocation {
+    ///
+    /// Do not call unless inside \
+    /// ``#[cfg(not(target_family = "wasm"))]`` \
+    ///
+    pub fn to_path(&self) -> PathBuf {
+        match &self {
+            SaveLocation::LastGame => PathBuf::new().join("last_game").with_extension("mf"),
+            SaveLocation::Named(name) => PathBuf::new().join("saves").join(name).with_extension("mf"),
+        }
+    }
 }
 
 impl TesseractApp {
@@ -120,24 +148,113 @@ impl TesseractApp {
         }
     }
 
-    pub fn set_minefield(&mut self, minefield: Minefield) {
-        self.dev_mode = minefield.has_cheated();
-        self.minefield = minefield.into();
+    fn gen_minefield(&mut self, settings: FieldSettings) {
+        self.dev_mode = false;
+        self.minefield = Minefield::new(settings).into();
+        self.force_change_phase(GameRunning)
+    }
+    ///
+    /// Loads the minefield from the specified location
+    ///
+    fn load_minefield(&mut self, location: &SaveLocation) -> Result<(), String> {
+        if !Self::save_exists(location) { return Err(
+            "Save file does not exist.".to_string())}
+
+        let bytes;
+        #[cfg(not(target_family = "wasm"))]
+        {
+            bytes = std::fs::read(location.to_path())
+                .map_err(|_| "Failed to read save file.")?;
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            // TODO: Add saves on wasm
+            bytes = vec![];
+        }
+
+        let mf= rkyv::from_bytes::<Minefield, RancorError>(&bytes)
+            .map_err(|_| "Failed to parse save file.")?;
+        self.minefield = mf.into();
         self.force_change_phase(GameRunning);
+        Ok(())
     }
-    pub fn clear_minefield(&mut self) {
+
+    ///
+    ///
+    ///
+    fn save_exists(location: &SaveLocation) -> bool {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            std::fs::exists(location.to_path()).unwrap_or(false)
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            // TODO: Add saves on wasm
+            false
+        }
+    }
+
+    ///
+    /// Saves minefield at the specified location, sets minefield to None and returns to the main menu
+    ///
+    fn save_minefield(&mut self, location: &SaveLocation) {
+        let mf = self.clear_minefield().expect("No minefield to save.");
+        let bytes = rkyv::to_bytes::<RancorError>(&mf).unwrap();
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            std::fs::create_dir_all(location.to_path().parent().unwrap_or_else(|| Path::new(""))).expect("Failed to create directory.");
+            std::fs::write(&location.to_path(), bytes).expect("Failed to write file.");
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            // TODO: Add saves on wasm
+        }
+
         self.minefield = None;
-        self.force_change_phase(MainMenu);
     }
+
+    ///
+    /// Deletes the save at the specified location if it exists
+    ///
+    fn delete_save(&mut self, location: &SaveLocation) {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let _ = std::fs::remove_file(SaveLocation::LastGame.to_path());
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            // TODO: Add saves on wasm
+        }
+    }
+
+    ///
+    /// Deletes the "last_game" save, sets minefield to None and returns to the main menu
+    ///
+    fn clear_minefield(&mut self) -> Option<Minefield> {
+        self.delete_save(&SaveLocation::LastGame);
+        self.force_change_phase(MainMenu);
+
+        mem::take(&mut self.minefield)
+    }
+
+    ///
+    /// Sets the value of next_phase if it is currently None
+    ///
     fn try_change_phase(&mut self, phase: SimplePhase) -> bool {
         if self.next_phase.is_none() {
-            self.next_phase = Some(phase);
+            self.force_change_phase(phase);
             return true;
         }
 
         false
     }
-    fn force_change_phase(&mut self, phase: SimplePhase) { self.next_phase = Some(phase); }
+    ///
+    /// Sets the value of next_phase, overwriting the current value
+    ///
+    fn force_change_phase(&mut self, phase: SimplePhase) {
+        self.next_phase = Some(phase);
+    }
 
     fn enable_dev_mode(&mut self) {
         self.dev_mode = true;
@@ -148,13 +265,30 @@ impl TesseractApp {
         self.inspected_tile = None;
         self.mouse_tool = None;
     }
+
+    ///
+    /// Called after the final frame before the app closes
+    ///
+    fn on_app_exit(&mut self) {
+        match &self.current_phase {
+            AppPhase::Simple(phase) => match phase {
+                // Ensures the game cannot be continued after it is over
+                GameWon | GameLost => { self.delete_save(&SaveLocation::LastGame); }
+                // Ensures the active game is saved
+                GameRunning => { self.save_minefield(&SaveLocation::LastGame); }
+                _ => {}
+            }
+            AppPhase::Transition(_) => {}
+        }
+    }
 }
 
 mod top_bar {
     use crate::tesseract::TesseractApp;
     use eframe::egui;
     use eframe::egui::containers::menu;
-    use eframe::egui::{Button, Context, Margin, RichText, Style, Ui};
+    use eframe::egui::{Button, Context, Margin, RichText, Sense, Style, Ui};
+    use eframe::epaint::Color32;
 
     impl TesseractApp {
         pub(super) fn show_top_bar(&mut self, ctx: &Context) {
@@ -169,6 +303,8 @@ mod top_bar {
         }
         fn show_top_bar_buttons(&mut self, ui: &mut Ui) {
             self.show_dev_mode_button(ui);
+            ui.add_space(20.);
+            self.show_quickstart_button(ui);
 
             ui.add(egui::Separator::default().spacing(20.));
 
@@ -204,13 +340,29 @@ mod top_bar {
                     }
                 });
         }
+        fn show_quickstart_button(&mut self, ui: &mut Ui) {
+            if self.minefield.as_ref().unwrap().has_started() {
+                let button = Button::new(RichText::new("Quickstart")
+                    .size(16.).color(Color32::from_gray(60)))
+                    .frame_when_inactive(false)
+                    .sense(Sense::empty());
+                ui.add(button);
+            }
+            else {
+                let button = Button::new(RichText::new("Quickstart")
+                    .size(16.));
+                if ui.add(button).clicked() {
+                    self.minefield.as_mut().unwrap().quickstart().unwrap();
+                }
+            }
+        }
     }
 }
 mod dev_panel {
+    use crate::tesseract::SimplePhase::{GameLost, GameWon};
     use crate::tesseract::{MouseTool, TesseractApp};
     use eframe::egui;
     use eframe::egui::{Button, Context, RichText, Ui};
-    use crate::tesseract::SimplePhase::{GameLost, GameWon};
 
     impl TesseractApp {
         pub(super) fn show_dev_panel(&mut self, ctx: &Context) {
@@ -281,8 +433,8 @@ mod minefield {
     use crate::minesweeper::tile::TileError;
     use crate::minesweeper::{coordinate, QueryResult};
     use crate::tesseract::minefield::Ordinate::X;
-    use eframe::egui::{pos2, vec2, Button, Color32, Image, Margin, PointerButton, Rect, Response, RichText, ScrollArea, Stroke, Ui};
     use eframe::egui;
+    use eframe::egui::{pos2, vec2, Button, Color32, Image, Margin, PointerButton, Rect, Response, RichText, ScrollArea, Stroke, Ui};
     use TileType::*;
 
     enum TileType {
@@ -497,6 +649,10 @@ impl App for TesseractApp {
         self.highlighted_tiles.clear();
 
         self.match_update(ctx);
+
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.on_app_exit()
+        }
     }
 }
 
@@ -507,14 +663,13 @@ mod update {
     use crate::tesseract::fonts::{get_scale, title_family};
     use crate::{FieldSettings, Preset};
     use eframe::egui::Align::Center;
-    use eframe::egui::{vec2, Align, Area, AtomExt, Button, FontId, Id, Key, Label, Layout, Margin, Modal, Style, Ui, ViewportCommand};
+    use eframe::egui::{vec2, Align, AtomExt, Button, FontId, Id, Key, Label, Layout, Margin, Modal, Style, Ui, ViewportCommand};
     use std::mem;
-    use std::ops::{DerefMut, SubAssign};
+    use std::ops::SubAssign;
     use Align::Min;
 
     pub(super) enum UpdateError {}
     type UpdateResult = Result<(), UpdateError>;
-
 
     impl TesseractApp {
 
@@ -548,11 +703,7 @@ mod update {
         fn play_button(&mut self, ui: &mut Ui, text: &str, preset: Preset) {
             let play = Button::new(RichText::new(text).size(30.))
                 .fill(Color32::from_gray(28));
-            if ui.add(play).clicked() {
-                let mut field = preset.generate();
-                field.quickstart().unwrap();
-                self.set_minefield(field);
-            };
+            if ui.add(play).clicked() { self.gen_minefield(preset.settings()) };
         }
 
         fn user_escaped(ctx: &Context) -> bool { any_pressed(ctx, vec![Key::Escape]) }
@@ -574,6 +725,15 @@ mod update {
                     ui.add(title);
 
                     ui.add_space(height * 0.10);
+
+                    if Self::save_exists(&SaveLocation::LastGame) {
+                        let continue_button = Button::new(RichText::new("Continue")
+                            .size(30.)).fill(Color32::from_gray(28));
+                        if ui.add(continue_button).clicked() {
+                            let _ = self.load_minefield(&SaveLocation::LastGame);
+                        }
+                        ui.add_space(height * 0.02);
+                    }
 
                     self.play_button(ui, " Play 2D ", Preset::Medium2D);
                     ui.add_space(height * 0.02);
@@ -645,9 +805,7 @@ mod update {
                             return;
                         }
 
-                        let mut mf = Minefield::new(settings.unwrap());
-                        mf.quickstart().unwrap();
-                        self.set_minefield(mf);
+                        self.gen_minefield(settings.unwrap());
                         return;
                     }
                 })
@@ -659,9 +817,7 @@ mod update {
         }
 
         ///
-        ///
         /// Creates an integer input widget.
-        ///
         ///
         fn int_input(ui: &mut Ui, label: &str, width: f32, height: f32, min: f32, max: f32,
                      padding: usize, value: &mut f32) {
@@ -748,9 +904,7 @@ mod update {
                             .size(18.)).fill(Color32::DARK_GRAY);
                         if ui.add(retry_button).clicked() {
                             let settings = self.minefield.as_ref().unwrap().settings();
-                            let mut mf = Minefield::new(settings);
-                            mf.quickstart().unwrap();
-                            self.set_minefield(mf);
+                            self.gen_minefield(settings);
                         }
                         ui.add_space(10.);
 
@@ -759,7 +913,7 @@ mod update {
                     });
                 });
 
-            if Self::user_escaped(ctx) { self.try_change_phase(MainMenu); }
+            if Self::user_escaped(ctx) { self.clear_minefield(); }
 
             Ok(())
         }
@@ -782,9 +936,7 @@ mod update {
                             .size(18.)).fill(Color32::DARK_GRAY);
                         if ui.add(retry_button).clicked() {
                             let settings = self.minefield.as_ref().unwrap().settings();
-                            let mut mf = Minefield::new(settings);
-                            mf.quickstart().unwrap();
-                            self.set_minefield(mf);
+                            self.gen_minefield(settings);
                         }
                         ui.add_space(10.);
 
@@ -792,7 +944,7 @@ mod update {
                     });
                 });
 
-            if Self::user_escaped(ctx) { self.try_change_phase(MainMenu); }
+            if Self::user_escaped(ctx) { self.clear_minefield(); }
 
             Ok(())
         }
@@ -826,6 +978,14 @@ mod update {
 
                         ui.label(RichText::new("Game Paused").size(40.));
                         ui.add_space(20.);
+
+                        let quit_button = Button::new(RichText::new("Quit")
+                            .size(18.)).fill(Color32::DARK_GRAY);
+                        if ui.add(quit_button).clicked() {
+                            self.save_minefield(&SaveLocation::LastGame);
+                        }
+                        ui.add_space(10.);
+
                         ui.label(RichText::new("Press <Esc> to resume").size(18.));
                     });
                 });
@@ -833,7 +993,6 @@ mod update {
 
             Ok(())
         }
-
 
 
         fn update_central(&mut self, ctx: &Context) -> UpdateResult {

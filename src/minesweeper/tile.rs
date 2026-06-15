@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use crate::minesweeper::tile::TileError::{Exploded, Underflow, Overflow, AlreadyRevealed};
 
+#[derive(rkyv::Archive, rkyv::Serialize, Hash)]
 pub struct Tile {
     has_mine: bool, is_flagged: bool, is_revealed: bool,
     true_minecount: u16, flagged_neighbours: u16, hidden_neighbours: u16,
@@ -8,6 +9,28 @@ pub struct Tile {
     // Debug
     debug_marked: bool,
 }
+
+
+mod archive {
+    use super::{Tile, ArchivedTile};
+    use rkyv::rancor::Fallible;
+    use rkyv::Deserialize;
+
+    impl<D: Fallible> Deserialize<Tile, D> for ArchivedTile {
+        fn deserialize(&self, deserializer: &mut D) -> Result<Tile, D::Error> {
+            Ok(Tile {
+                has_mine: self.has_mine.deserialize(deserializer)?,
+                is_flagged: self.is_flagged.deserialize(deserializer)?,
+                is_revealed: self.is_revealed.deserialize(deserializer)?,
+                true_minecount: self.true_minecount.deserialize(deserializer)?,
+                flagged_neighbours: self.flagged_neighbours.deserialize(deserializer)?,
+                hidden_neighbours: self.hidden_neighbours.deserialize(deserializer)?,
+                debug_marked: self.debug_marked.deserialize(deserializer)?,
+            })
+        }
+    }
+}
+
 
 pub type TileResult = Result<(), TileError>;
 pub enum TileError {

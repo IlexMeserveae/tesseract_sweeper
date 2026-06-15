@@ -4,9 +4,26 @@ pub fn coordinate(x: usize, y: usize, z: usize, w: usize) -> Coordinate {
     Coordinate::new(x , y, z, w).unwrap()
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize, Hash)]
 pub struct Coordinate {
     x: usize, y: usize, z: usize, w: usize
+}
+
+mod archive {
+    use super::{ArchivedCoordinate, Coordinate};
+    use rkyv::rancor::Fallible;
+    use rkyv::Deserialize;
+
+    impl<D: Fallible> Deserialize<Coordinate, D> for ArchivedCoordinate {
+        fn deserialize(&self, deserializer: &mut D) -> Result<Coordinate, D::Error> {
+            Ok(Coordinate {
+                x: self.x.deserialize(deserializer)?,
+                y: self.y.deserialize(deserializer)?,
+                z: self.z.deserialize(deserializer)?,
+                w: self.w.deserialize(deserializer)?,
+            })
+        }
+    }
 }
 
 impl Display for Coordinate {
