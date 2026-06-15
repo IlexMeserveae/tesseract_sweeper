@@ -1,11 +1,12 @@
 use crate::minesweeper::coordinate::Coordinate;
 use crate::minesweeper::Minefield;
 use crate::tesseract::fonts::{reload_active_fonts, MONOSPACE_FONT, PROPORTIONAL_FONT, TITLE_FONT};
-use crate::tesseract::AppPhase::*;
+use crate::tesseract::SimplePhase::*;
 use eframe::egui::{Color32, Context, Key, RichText};
 use eframe::{egui, App, CreationContext, Frame};
 use std::cmp::{min, PartialEq};
 use std::ops::AddAssign;
+use std::sync::Arc;
 use tile_settings::TileSettings;
 
 mod icons;
@@ -13,8 +14,36 @@ mod colors;
 mod fonts;
 mod tile_settings;
 
-#[derive(Default, Eq, PartialEq)]
 enum AppPhase {
+    Simple(SimplePhase),
+    Transition(TransitionPhase),
+}
+impl AppPhase {
+    pub fn unwrap_simple(self) -> SimplePhase {
+        match self { Self::Simple(p) => p, _ => panic!() }
+    }
+    pub fn unwrap_simple_ref(&self) -> &SimplePhase {
+        match self { Self::Simple(p) => p, _ => panic!() }
+    }
+    pub fn unwrap_simple_mut(&mut self) -> &mut SimplePhase {
+        match self { Self::Simple(p) => p, _ => panic!() }
+    }
+
+    pub fn unwrap_transition(self) -> TransitionPhase {
+        match self { Self::Transition(p) => p, _ => panic!() }
+    }
+    pub fn unwrap_transition_ref(&self) -> &TransitionPhase {
+        match self { Self::Transition(p) => p, _ => panic!() }
+    }
+    pub fn unwrap_transition_mut(&mut self) -> &mut TransitionPhase {
+        match self { Self::Transition(p) => p, _ => panic!() }
+    }
+
+    pub fn is_simple(&self) -> bool { matches!(self, Self::Simple(_)) }
+
+}
+#[derive(Copy, Clone, Debug, Default)]
+enum SimplePhase {
     #[default]
     MainMenu,
     SizeMenu,
@@ -22,6 +51,16 @@ enum AppPhase {
     GamePaused,
     GameLost,
     GameWon,
+}
+impl From<SimplePhase> for AppPhase {
+    fn from(value: SimplePhase) -> Self { Self::Simple(value) }
+}
+#[derive(Debug)]
+enum TransitionPhase {
+    Waiting(SimplePhase, u8),
+}
+impl From<TransitionPhase> for AppPhase {
+    fn from(value: TransitionPhase) -> Self { Self::Transition(value) }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -35,7 +74,7 @@ pub struct TesseractApp {
     settings: TileSettings,
 
     current_phase: AppPhase,
-    next_phase: Option<AppPhase>,
+    next_phase: Option<SimplePhase>,
 
     hovered_tile: Option<Coordinate>,
     highlighted_tiles: Vec<Coordinate>,
@@ -65,7 +104,7 @@ impl TesseractApp {
             minefield: None,
             settings: TileSettings::default(),
 
-            current_phase: AppPhase::default(),
+            current_phase: SimplePhase::default().into(),
             next_phase: None,
 
             hovered_tile: None,
@@ -90,7 +129,7 @@ impl TesseractApp {
         self.minefield = None;
         self.force_change_phase(MainMenu);
     }
-    fn try_change_phase(&mut self, phase: AppPhase) -> bool {
+    fn try_change_phase(&mut self, phase: SimplePhase) -> bool {
         if self.next_phase.is_none() {
             self.next_phase = Some(phase);
             return true;
@@ -98,7 +137,7 @@ impl TesseractApp {
 
         false
     }
-    fn force_change_phase(&mut self, phase: AppPhase) { self.next_phase = Some(phase); }
+    fn force_change_phase(&mut self, phase: SimplePhase) { self.next_phase = Some(phase); }
 
     fn enable_dev_mode(&mut self) {
         self.dev_mode = true;
@@ -171,7 +210,7 @@ mod dev_panel {
     use crate::tesseract::{MouseTool, TesseractApp};
     use eframe::egui;
     use eframe::egui::{Button, Context, RichText, Ui};
-    use crate::tesseract::AppPhase::{GameLost, GameWon};
+    use crate::tesseract::SimplePhase::{GameLost, GameWon};
 
     impl TesseractApp {
         pub(super) fn show_dev_panel(&mut self, ctx: &Context) {
@@ -235,7 +274,7 @@ mod dev_panel {
 mod minefield {
     use super::icons::icon;
     use super::icons::Icon::{IncorrectFlag, Mine, RedFlag};
-    use super::AppPhase::*;
+    use super::SimplePhase::*;
     use super::{colors, hidden_background, minecount_text, revealed_background, MouseTool, TesseractApp};
     use crate::minesweeper::coordinate::Ordinate::Y;
     use crate::minesweeper::coordinate::{Coordinate, Ordinate};
@@ -332,7 +371,7 @@ mod minefield {
             let field = self.minefield.as_mut().unwrap();
             let size = self.settings.tile_size();
 
-            let query = match self.current_phase {
+            let query = match self.current_phase.unwrap_simple_ref() {
                 GameRunning | GameWon => field.query_tile(coord),
                 GameLost => field.query_tile_gameover(coord),
                 GamePaused => {
@@ -448,10 +487,10 @@ mod minefield {
 impl App for TesseractApp {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         if let Some(next) = self.next_phase.take() {
-            self.current_phase = next;
+            self.current_phase = next.into();
         }
 
-        if self.current_phase == GameRunning && self.minefield.as_ref().unwrap().game_won() {
+        if matches!(self.current_phase.unwrap_simple_ref(), GameRunning)  && self.minefield.as_ref().unwrap().game_won() {
             self.force_change_phase(GameWon);
         }
 
@@ -470,6 +509,7 @@ mod update {
     use eframe::egui::Align::Center;
     use eframe::egui::{vec2, Align, Area, AtomExt, Button, FontId, Id, Key, Label, Layout, Margin, Modal, Style, Ui, ViewportCommand};
     use std::mem;
+    use std::ops::{DerefMut, SubAssign};
     use Align::Min;
 
     pub(super) enum UpdateError {}
@@ -479,7 +519,23 @@ mod update {
     impl TesseractApp {
 
         pub fn match_update(&mut self, ctx: &Context) {
-            let _ = match self.current_phase {
+            if !self.current_phase.is_simple() {
+                let curr = self.current_phase.unwrap_transition_mut();
+                let _ = match curr {
+                    TransitionPhase::Waiting(phase, frames) => {
+                        if *frames > 0 { frames.sub_assign(1); }
+                        else {
+                            let next = mem::take(phase);
+                            self.force_change_phase(next);
+                        }
+
+                        self.update_waiting(ctx)
+                    }
+                };
+                return;
+            }
+
+            let _ = match self.current_phase.unwrap_simple_ref() {
                 MainMenu => self.update_main_menu(ctx),
                 SizeMenu => self.update_size_menu(ctx),
                 GameRunning => self.update_game_running(ctx),
@@ -500,6 +556,10 @@ mod update {
         }
 
         fn user_escaped(ctx: &Context) -> bool { any_pressed(ctx, vec![Key::Escape]) }
+
+        fn update_waiting(&mut self, ctx: &Context) -> UpdateResult {
+            Ok(())
+        }
 
         fn update_main_menu(&mut self, ctx: &Context) -> UpdateResult {
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -818,7 +878,6 @@ mod update {
         }
     }
 }
-
 
 
 fn any_pressed(ctx: &Context, keys: Vec<Key>) -> bool {
