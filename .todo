@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<todo version="0.1.20">
+    <note priority="medium" time="1781697149">
+        Add windows support
+    </note>
+    <note priority="medium" time="1781697381">
+        Create .desktop file on first launch
+    </note>
+</todo>

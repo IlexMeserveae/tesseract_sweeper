@@ -1,3 +1,4 @@
+use std::io::stdin;
 use std::sync::Arc;
 use crate::minesweeper::{coordinate, Minefield};
 use crate::tesseract::TesseractApp;
@@ -21,8 +22,14 @@ fn main() {
         ..Default::default()
     };
 
-    run_native("Tesseract", options, Box::new(|cc|
-        Ok(Box::new(TesseractApp::new(cc))))).unwrap();
+    let result = run_native("Tesseract", options, Box::new(|cc|
+        Ok(Box::new(TesseractApp::new(cc)))));
+
+    if result.is_err() {
+        println!("An error occurred:\n{}", result.err().unwrap());
+
+        let _ = stdin().read_line(&mut String::default());
+    }
 }
 
 pub struct FieldSettings {
